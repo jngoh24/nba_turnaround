@@ -17,9 +17,8 @@ import streamlit as st
 # Config
 # ---------------------------------------------------------------------------
 
-# TODO: update once the repo exists -- point at its raw file path, e.g.
-# "https://raw.githubusercontent.com/jngoh24/nba-turnaround/main/data"
-GITHUB_BASE_URL = "https://raw.githubusercontent.com/jngoh24/REPO_NAME/main/data"
+# Points at the nba_turnaround repo's raw file path.
+GITHUB_BASE_URL = "https://raw.githubusercontent.com/jngoh24/nba_turnaround/main/data"
 
 st.set_page_config(page_title="NBA Turnaround Dashboard", layout="wide")
 
