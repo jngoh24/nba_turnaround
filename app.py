@@ -118,16 +118,23 @@ except Exception as e:
 # Sidebar -- team selector, logo, headline metric, methodology note
 # ---------------------------------------------------------------------------
 
-full_df["team_season_label"] = full_df["TEAM_NAME"] + " -- " + full_df["season"]
-label_options = full_df.sort_values(["season", "TEAM_NAME"], ascending=[False, True])["team_season_label"].tolist()
+team_options = sorted(full_df["TEAM_NAME"].unique())
 
 with st.sidebar:
     st.markdown("**NBA TURNAROUND MODEL**")
     st.caption("2016-17 to 2024-25 -- bottom-10 team turnarounds")
     st.markdown("---")
 
-    selected_label = st.selectbox("Team & season", options=label_options, label_visibility="visible")
-    selected_row = full_df[full_df["team_season_label"] == selected_label].iloc[0]
+    selected_team = st.selectbox("Team", options=team_options)
+
+    season_options = sorted(
+        full_df[full_df["TEAM_NAME"] == selected_team]["season"].unique(), reverse=True
+    )
+    selected_season = st.selectbox("Season", options=season_options)
+
+    selected_row = full_df[
+        (full_df["TEAM_NAME"] == selected_team) & (full_df["season"] == selected_season)
+    ].iloc[0]
     team_name = selected_row["TEAM_NAME"]
     style = TEAM_STYLE.get(team_name, DEFAULT_STYLE)
 
