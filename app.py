@@ -223,11 +223,23 @@ tab_diagnostic, tab_whatif, tab_changed, tab_explorer = st.tabs(
 with tab_diagnostic:
     st.markdown(f'<div class="kicker">{team_name.upper()} &middot; {selected_row["season"]}</div>', unsafe_allow_html=True)
     st.subheader("League percentile profile")
-    st.caption("0 = worst in the league that season, 1 = best. Dashed line = league median.")
+    st.caption(
+        "0 = worst in the league that season, 1 = best -- sign-corrected so "
+        "this is always true (e.g. a low turnover rate shows as a HIGH bar "
+        "here, since fewer turnovers is the good outcome, even though the "
+        "raw stat's percentile runs the other way). Dashed line = league "
+        "median. PACE has no inherent good/bad direction, shown unadjusted."
+    )
 
-    diag_stats = [c.replace("_PCTILE", "") for c in LEVEL_FEATURES]
-    diag_values = [selected_row[c] for c in LEVEL_FEATURES]
-    diag_df = pd.DataFrame({"stat": diag_stats, "percentile": diag_values}).sort_values("percentile")
+    diag_rows = []
+    for col in LEVEL_FEATURES:
+        stat_name = col.replace("_PCTILE", "")
+        raw_val = selected_row[col]
+        bound_row = delta_summary_df[delta_summary_df["stat"] == stat_name]
+        higher_is_better = bool(bound_row.iloc[0]["higher_is_better"]) if len(bound_row) > 0 else True
+        display_val = raw_val if higher_is_better else (1 - raw_val)
+        diag_rows.append({"stat": stat_name, "percentile": display_val})
+    diag_df = pd.DataFrame(diag_rows).sort_values("percentile")
 
     fig3 = go.Figure()
     fig3.add_trace(go.Bar(
