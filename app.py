@@ -9,8 +9,12 @@ Run locally:
     streamlit run app.py
 """
 
+import io
+
+import joblib
 import pandas as pd
 import plotly.graph_objects as go
+import requests
 import streamlit as st
 
 # ---------------------------------------------------------------------------
@@ -30,12 +34,13 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
-.stApp { background-color: #f7f7f5; }
-h1, h2, h3 { font-family: 'Source Serif 4', serif !important; }
-p, div, span, label { font-family: 'Inter', sans-serif; }
+.stApp { background-color: #f7f7f5; color: #1a1a1a; }
+h1, h2, h3 { font-family: 'Source Serif 4', serif !important; color: #1a1a1a !important; }
+p, div, span, label { font-family: 'Inter', sans-serif; color: #1a1a1a; }
 .metric-mono { font-family: 'JetBrains Mono', monospace; }
 
-[data-testid="stMetricValue"] { font-family: 'JetBrains Mono', monospace; }
+[data-testid="stMetricValue"] { font-family: 'JetBrains Mono', monospace; color: #1a1a1a !important; }
+[data-testid="stMetricLabel"] { color: #1a1a1a !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -51,16 +56,49 @@ COLOR_ACCENT = "#c9a961"   # gold accent
 def load_data():
     case_df = pd.read_csv(f"{GITHUB_BASE_URL}/bottom10_case_table.csv")
     delta_summary_df = pd.read_csv(f"{GITHUB_BASE_URL}/delta_comparison_summary.csv")
-    return case_df, delta_summary_df
+    full_df = pd.read_csv(f"{GITHUB_BASE_URL}/team_season_features.csv")
+    roster_bounds_df = pd.read_csv(f"{GITHUB_BASE_URL}/roster_feature_bounds.csv")
+    return case_df, delta_summary_df, full_df, roster_bounds_df
 
 try:
-    case_df, delta_summary_df = load_data()
+    case_df, delta_summary_df, full_df, roster_bounds_df = load_data()
 except Exception as e:
     st.error(
         f"Couldn't load data from GitHub -- check GITHUB_BASE_URL points at the "
         f"right repo and the CSVs have been pushed. ({e})"
     )
     st.stop()
+
+
+@st.cache_resource(ttl=3600)
+def load_model_and_features():
+    """
+    Loads the TRIMMED model (no tautological rating-delta features) --
+    the actionable-features version, meant for exactly this kind of
+    scenario tool. feature_cols_trimmed.json defines the exact column
+    order the model expects; loaded from the same export rather than
+    hardcoded here, so the two can't silently drift apart.
+    """
+    model_resp = requests.get(f"{GITHUB_BASE_URL}/model_target_b.joblib")
+    model_resp.raise_for_status()
+    model = joblib.load(io.BytesIO(model_resp.content))
+
+    features_resp = requests.get(f"{GITHUB_BASE_URL}/feature_cols_trimmed.json")
+    features_resp.raise_for_status()
+    feature_cols = features_resp.json()
+
+    return model, feature_cols
+
+try:
+    model, FEATURE_COLS_TRIMMED = load_model_and_features()
+    LEVEL_FEATURES = [c for c in FEATURE_COLS_TRIMMED if c.endswith("_PCTILE") and not c.startswith("DELTA_")]
+    DELTA_FEATURES = [c for c in FEATURE_COLS_TRIMMED if c.startswith("DELTA_")]
+    ROOKIE_FEATURES = [c for c in FEATURE_COLS_TRIMMED if c.startswith("ROOKIES_")]
+    model_load_error = None
+except Exception as e:
+    model, FEATURE_COLS_TRIMMED = None, []
+    LEVEL_FEATURES, DELTA_FEATURES, ROOKIE_FEATURES = [], [], []
+    model_load_error = str(e)
 
 # ---------------------------------------------------------------------------
 # Header
@@ -73,10 +111,26 @@ st.markdown(
 )
 
 # ---------------------------------------------------------------------------
+# Shared team/season selector -- used by Team Diagnostic and What-If
+# ---------------------------------------------------------------------------
+
+full_df["team_season_label"] = full_df["TEAM_NAME"] + " -- " + full_df["season"]
+label_options = full_df.sort_values(["season", "TEAM_NAME"], ascending=[False, True])["team_season_label"].tolist()
+
+st.markdown("---")
+selected_label = st.selectbox(
+    "Team & season to analyze (used by Team Diagnostic and What-If below)",
+    options=label_options,
+)
+selected_row = full_df[full_df["team_season_label"] == selected_label].iloc[0]
+
+# ---------------------------------------------------------------------------
 # Tabs
 # ---------------------------------------------------------------------------
 
-tab_overview, tab_changed, tab_explorer = st.tabs(["Overview", "What Changed", "Case Explorer"])
+tab_overview, tab_changed, tab_diagnostic, tab_whatif, tab_explorer = st.tabs(
+    ["Overview", "What Changed", "Team Diagnostic", "What-If", "Case Explorer"]
+)
 
 # ---------------------------------------------------------------------------
 # Tab 1: Overview
@@ -182,7 +236,138 @@ with tab_changed:
     c3.metric("90th percentile", f"{stat_row['p90']:.3f}")
 
 # ---------------------------------------------------------------------------
-# Tab 3: Case Explorer
+# Tab 3: Team Diagnostic
+# ---------------------------------------------------------------------------
+
+with tab_diagnostic:
+    st.subheader(f"{selected_row['TEAM_NAME']} -- {selected_row['season']}")
+
+    is_bottom10 = bool(selected_row.get("is_bottom_n", False))
+    st.markdown(
+        f"**{'Bottom-10 team' if is_bottom10 else 'Not a bottom-10 team'}** "
+        f"that season -- WinPCT {selected_row['WinPCT']:.3f}"
+    )
+
+    st.markdown(
+        "Percentile rank within the league that season, for every stat -- "
+        "0 = worst in the league, 1 = best. This is where the team actually "
+        "stood, not where it ended up."
+    )
+
+    diag_stats = [c.replace("_PCTILE", "") for c in LEVEL_FEATURES]
+    diag_values = [selected_row[c] for c in LEVEL_FEATURES]
+    diag_df = pd.DataFrame({"stat": diag_stats, "percentile": diag_values}).sort_values("percentile")
+
+    fig3 = go.Figure()
+    fig3.add_trace(go.Bar(
+        y=diag_df["stat"], x=diag_df["percentile"], orientation="h",
+        marker_color=[COLOR_STAYED if v < 0.5 else COLOR_JUMPED for v in diag_df["percentile"]],
+    ))
+    fig3.add_vline(x=0.5, line_dash="dash", line_color="#999999")
+    fig3.update_layout(
+        plot_bgcolor="#f7f7f5", paper_bgcolor="#f7f7f5", font_family="Inter",
+        height=550, xaxis_title="League percentile that season (dashed line = league median)",
+        margin=dict(l=10, r=10, t=10, b=10), xaxis_range=[0, 1],
+    )
+    st.plotly_chart(fig3, use_container_width=True)
+
+    if is_bottom10:
+        st.markdown("---")
+        st.markdown(
+            f"**What actually happened next season:** reached top-10 conference: "
+            f"**{selected_row.get('NEXT_target_a_top10_conf', 'N/A')}** -- "
+            f"reached the playoff bracket: **{selected_row.get('NEXT_target_b_made_bracket', 'N/A')}**"
+        )
+
+# ---------------------------------------------------------------------------
+# Tab 4: What-If
+# ---------------------------------------------------------------------------
+
+with tab_whatif:
+    if model is None:
+        st.error(
+            f"Couldn't load the model from GitHub -- check model_target_b.joblib "
+            f"and feature_cols_trimmed.json have been pushed. ({model_load_error})"
+        )
+    else:
+        st.subheader(f"What-if: {selected_row['TEAM_NAME']} -- {selected_row['season']}")
+        st.markdown(
+            "Starting from this team's ACTUAL current-season stats, assume no "
+            "further improvement (all sliders at zero) as the baseline, then "
+            "move sliders to see how realistic changes shift the probability "
+            "of reaching the playoff bracket next season. Every slider is "
+            "bounded by the actual 10th-90th percentile range of year-over-year "
+            "change seen across 90 bottom-10 team-seasons -- you can't ask for "
+            "an improvement that's never actually happened."
+        )
+        st.caption(
+            "Uses the tautology-free model -- excludes NET/OFF/DEF/CLUTCH_NET "
+            "rating deltas, since those mechanically restate the outcome "
+            "rather than something a front office can act on."
+        )
+
+        def build_input_row(deltas: dict, rookies: dict, star_added_val: bool) -> pd.DataFrame:
+            row = {}
+            for col in LEVEL_FEATURES:
+                row[col] = selected_row[col]
+            for col in DELTA_FEATURES:
+                row[col] = deltas.get(col, 0.0)
+            for col in ROOKIE_FEATURES:
+                row[col] = rookies.get(col, 0.0)
+            if "star_added" in FEATURE_COLS_TRIMMED:
+                row["star_added"] = float(star_added_val)
+            if "is_bottom_n" in FEATURE_COLS_TRIMMED:
+                row["is_bottom_n"] = float(selected_row.get("is_bottom_n", True))
+            if "WinPCT" in FEATURE_COLS_TRIMMED:
+                row["WinPCT"] = selected_row["WinPCT"]
+            return pd.DataFrame([row])[FEATURE_COLS_TRIMMED]
+
+        baseline_row = build_input_row(deltas={}, rookies={}, star_added_val=False)
+        baseline_prob = model.predict_proba(baseline_row)[0, 1]
+
+        st.markdown("---")
+        col_sliders, col_result = st.columns([2, 1])
+
+        with col_sliders:
+            st.markdown("**Star addition**")
+            star_added_input = st.checkbox("Assume a star-tier player is added this offseason")
+
+            st.markdown("**Rookie contribution**")
+            rookie_inputs = {}
+            for col in ROOKIE_FEATURES:
+                bounds_row = roster_bounds_df[roster_bounds_df["stat"] == col]
+                if len(bounds_row) == 0:
+                    continue
+                lo, hi = float(bounds_row.iloc[0]["p10"]), float(bounds_row.iloc[0]["p90"])
+                lo, hi = min(lo, 0.0), max(hi, 0.0)
+                rookie_inputs[col] = st.slider(
+                    col.replace("ROOKIES_", "").replace("_", " ").title(),
+                    min_value=lo, max_value=hi, value=0.0,
+                )
+
+            st.markdown("**Component stat changes** (year-over-year, percentile points)")
+            delta_inputs = {}
+            for col in DELTA_FEATURES:
+                stat_name = col.replace("DELTA_", "").replace("_PCTILE", "")
+                bounds_row = delta_summary_df[delta_summary_df["stat"] == stat_name]
+                if len(bounds_row) == 0:
+                    continue
+                lo, hi = float(bounds_row.iloc[0]["p10"]), float(bounds_row.iloc[0]["p90"])
+                delta_inputs[col] = st.slider(stat_name, min_value=lo, max_value=hi, value=0.0)
+
+        scenario_row = build_input_row(deltas=delta_inputs, rookies=rookie_inputs, star_added_val=star_added_input)
+        scenario_prob = model.predict_proba(scenario_row)[0, 1]
+
+        with col_result:
+            st.metric(
+                "Playoff bracket probability",
+                f"{scenario_prob:.0%}",
+                delta=f"{(scenario_prob - baseline_prob):+.0%} vs. no change",
+            )
+            st.caption(f"Baseline (no improvement): {baseline_prob:.0%}")
+
+# ---------------------------------------------------------------------------
+# Tab 5: Case Explorer
 # ---------------------------------------------------------------------------
 
 with tab_explorer:
