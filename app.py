@@ -142,11 +142,20 @@ with st.sidebar:
         st.image(f"https://i.logocdn.com/nba/current/{style['slug']}.svg", width=90)
 
     is_bottom10 = bool(selected_row.get("is_bottom_n", False))
+    league_rank = int(selected_row["LEAGUE_RANK"])
+    if league_rank <= 12:
+        rank_color = COLOR_JUMPED
+    elif league_rank >= 21:
+        rank_color = COLOR_STAYED
+    else:
+        rank_color = "#c9a227"  # yellow -- middle of the pack
+
     st.markdown(
         f"<div style='border:1px solid #ddd; border-radius:6px; padding:12px; margin-top:8px;'>"
         f"<div style='font-size:11px; letter-spacing:0.05em; color:{TEXT_MUTED}; text-transform:uppercase;'>WinPCT that season</div>"
         f"<div style='font-size:28px; font-weight:700; color:{style['primary']};'>{selected_row['WinPCT']:.3f}</div>"
-        f"<div style='font-size:12px; color:{TEXT_MUTED};'>{'Bottom-10 team' if is_bottom10 else 'Not bottom-10'}</div>"
+        f"<div style='font-size:12px; color:{TEXT_MUTED}; margin-top:4px;'>League rank</div>"
+        f"<div style='font-size:18px; font-weight:700; color:{rank_color};'>{league_rank} of 30</div>"
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -175,6 +184,7 @@ p, div, span, label {{ font-family: 'Inter', sans-serif; color: {TEXT}; }}
 .badge {{ background-color: {TEXT}; color: white; padding: 2px 8px; border-radius: 4px; font-weight: 600; }}
 .kpi-label {{ font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: {TEXT_MUTED}; }}
 .kpi-value {{ font-size: 32px; font-weight: 700; color: {style['primary']}; font-family: 'JetBrains Mono', monospace; }}
+.kpi-value-fixed {{ font-size: 32px; font-weight: 700; color: {TEXT}; font-family: 'JetBrains Mono', monospace; }}
 [data-testid="stMetricValue"] {{ color: {style['primary']} !important; }}
 [data-testid="stSidebar"] {{ background-color: #ffffff; }}
 </style>
@@ -208,7 +218,7 @@ kpis = [
 ]
 for col, (label, value) in zip(kpi_cols, kpis):
     col.markdown(
-        f'<div class="kpi-label">{label}</div><div class="kpi-value">{value}</div>',
+        f'<div class="kpi-label">{label}</div><div class="kpi-value-fixed">{value}</div>',
         unsafe_allow_html=True,
     )
 
@@ -479,9 +489,9 @@ with tab_changed:
     st.plotly_chart(fig2, use_container_width=True)
 
     c1, c2, c3 = st.columns(3)
-    c1.markdown(f'<div class="kpi-label">10th percentile</div><div class="kpi-value" style="font-size:22px;">{stat_row["p10"]:.3f}</div>', unsafe_allow_html=True)
-    c2.markdown(f'<div class="kpi-label">Median</div><div class="kpi-value" style="font-size:22px;">{stat_row["median"]:.3f}</div>', unsafe_allow_html=True)
-    c3.markdown(f'<div class="kpi-label">90th percentile</div><div class="kpi-value" style="font-size:22px;">{stat_row["p90"]:.3f}</div>', unsafe_allow_html=True)
+    c1.markdown(f'<div class="kpi-label">10th percentile</div><div class="kpi-value-fixed" style="font-size:22px;">{stat_row["p10"]:.3f}</div>', unsafe_allow_html=True)
+    c2.markdown(f'<div class="kpi-label">Median</div><div class="kpi-value-fixed" style="font-size:22px;">{stat_row["median"]:.3f}</div>', unsafe_allow_html=True)
+    c3.markdown(f'<div class="kpi-label">90th percentile</div><div class="kpi-value-fixed" style="font-size:22px;">{stat_row["p90"]:.3f}</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
 # Tab 4: Case Explorer
