@@ -71,6 +71,36 @@ TEAM_STYLE = {
 }
 DEFAULT_STYLE = {"primary": "#1a1a1a", "secondary": "#9a9a95", "slug": None}
 
+# Plain-English labels -- nobody outside this project knows what
+# "OPP_EFG_PCT" means. Used everywhere a stat name is displayed.
+STAT_LABELS = {
+    "NET_RATING": "Net Rating",
+    "CLUTCH_NET_RATING": "Clutch-Time Net Rating",
+    "OFF_RATING": "Offensive Rating",
+    "DEF_RATING": "Defensive Rating (Points Allowed)",
+    "PACE": "Pace of Play",
+    "AST_RATIO": "Ball Movement (Assist Ratio)",
+    "TM_TOV_PCT": "Turnover Rate",
+    "FF_TM_TOV_PCT": "Turnover Rate",
+    "EFG_PCT": "Shooting Efficiency",
+    "FF_EFG_PCT": "Shooting Efficiency",
+    "FTA_RATE": "Free Throw Rate",
+    "OREB_PCT": "Offensive Rebounding",
+    "OPP_EFG_PCT": "Opponent Shooting Efficiency Allowed",
+    "OPP_FTA_RATE": "Opponent Free Throw Rate Allowed",
+    "OPP_TOV_PCT": "Turnovers Forced on Defense",
+    "OPP_OREB_PCT": "Offensive Rebounds Allowed",
+}
+
+def pretty(stat_code: str) -> str:
+    return STAT_LABELS.get(stat_code, stat_code.replace("_", " ").title())
+
+# EFG_PCT/FF_EFG_PCT and TM_TOV_PCT/FF_TM_TOV_PCT are literally the same
+# underlying stat pulled from two different nba_api endpoints -- showing
+# "Shooting Efficiency" twice in a dropdown looks like a bug, not a
+# feature. Keep only one of each pair in anything user-facing.
+DUPLICATE_STATS = {"FF_EFG_PCT", "FF_TM_TOV_PCT"}
+
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
@@ -183,10 +213,11 @@ p, div, span, label {{ font-family: 'Inter', sans-serif; color: {TEXT}; }}
 .kicker {{ font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: {TEXT_MUTED}; font-family: 'Inter', sans-serif; }}
 .badge {{ background-color: {TEXT}; color: white; padding: 2px 8px; border-radius: 4px; font-weight: 600; }}
 .kpi-label {{ font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: {TEXT_MUTED}; }}
-.kpi-value {{ font-size: 32px; font-weight: 700; color: {style['primary']}; font-family: 'JetBrains Mono', monospace; }}
-.kpi-value-fixed {{ font-size: 32px; font-weight: 700; color: {TEXT}; font-family: 'JetBrains Mono', monospace; }}
+.kpi-value {{ font-size: 32px; font-weight: 700; color: {style['primary']}; font-family: 'JetBrains Mono', monospace; letter-spacing: -0.02em; }}
+.kpi-value-fixed {{ font-size: 32px; font-weight: 700; color: {TEXT}; font-family: 'JetBrains Mono', monospace; letter-spacing: -0.02em; }}
 [data-testid="stMetricValue"] {{ color: {style['primary']} !important; }}
 [data-testid="stSidebar"] {{ background-color: #ffffff; }}
+[data-testid="stSidebar"] [data-testid="stImage"] {{ filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1)); }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -259,28 +290,40 @@ with tab_playbook:
     )
 
     TAUTOLOGICAL_STATS = {"NET_RATING", "OFF_RATING", "DEF_RATING", "CLUTCH_NET_RATING"}
-    chart_df = delta_summary_df[~delta_summary_df["stat"].isin(TAUTOLOGICAL_STATS)]
+    chart_df = delta_summary_df[
+        ~delta_summary_df["stat"].isin(TAUTOLOGICAL_STATS | DUPLICATE_STATS)
+    ].copy()
+    chart_df["label"] = chart_df["stat"].apply(pretty)
     sorted_df = chart_df.sort_values("improvement", ascending=True)
 
+    max_abs = sorted_df["improvement"].abs().max()
     fig_playbook = go.Figure()
     fig_playbook.add_trace(go.Bar(
-        y=sorted_df["stat"], x=sorted_df["improvement"], orientation="h",
-        marker_color=["#999999" if s == "PACE" else (COLOR_JUMPED if v > 0 else COLOR_STAYED)
-                      for s, v in zip(sorted_df["stat"], sorted_df["improvement"])],
+        y=sorted_df["label"], x=sorted_df["improvement"], orientation="h",
+        marker=dict(
+            color=sorted_df["improvement"],
+            colorscale=[[0, COLOR_STAYED], [0.5, "#f0ede6"], [1, COLOR_JUMPED]],
+            cmin=-max_abs, cmax=max_abs,
+            line=dict(width=0),
+        ),
         text=[f"{v:+.2f}" for v in sorted_df["improvement"]], textposition="outside",
-        textfont=dict(family="JetBrains Mono, monospace", size=11),
+        textfont=dict(family="JetBrains Mono, monospace", size=13, color=TEXT),
+        hovertemplate="<b>%{y}</b><br>%{x:+.2f}<extra></extra>",
     ))
-    fig_playbook.add_vline(x=0, line_color=TEXT_MUTED)
+    fig_playbook.add_vline(x=0, line_color=TEXT_MUTED, line_width=1.5)
     fig_playbook.update_layout(
-        plot_bgcolor=BG, paper_bgcolor=BG, font_family="Inter", font_color=TEXT, height=460,
-        xaxis=dict(gridcolor="#e5e5e2", title="Improvement (positive = genuinely helped teams reach the bracket)"),
-        yaxis=dict(showgrid=False), margin=dict(l=10, r=40, t=10, b=10), showlegend=False,
+        plot_bgcolor=BG, paper_bgcolor=BG, font_family="Inter", font_color=TEXT, height=480,
+        xaxis=dict(gridcolor="#e5e5e2", title="Improvement (positive = genuinely helped teams reach the bracket)",
+                    zeroline=False),
+        yaxis=dict(showgrid=False, tickfont=dict(size=13)),
+        margin=dict(l=10, r=50, t=10, b=10), showlegend=False, bargap=0.35,
     )
     st.plotly_chart(fig_playbook, use_container_width=True)
     st.caption(
-        "PACE excluded (no inherent good direction). NET/OFF/DEF/CLUTCH_NET "
-        "rating excluded -- they mechanically restate the outcome (better "
-        "record = better rating) rather than explain what drove it."
+        "Pace of Play excluded (no inherent good direction). Net/Offensive/"
+        "Defensive/Clutch Rating excluded -- they mechanically restate the "
+        "outcome (better record = better rating) rather than explain what "
+        "drove it."
     )
 
     st.markdown("---")
@@ -291,7 +334,8 @@ with tab_playbook:
         "bracket anyway), and where the typical successful team landed."
     )
 
-    playbook_stat = st.selectbox("Stat", options=chart_df["stat"].tolist(), key="playbook_stat")
+    stat_options = chart_df["stat"].tolist()
+    playbook_stat = st.selectbox("Stat", options=stat_options, format_func=pretty, key="playbook_stat")
     stat_bound_row = delta_summary_df[delta_summary_df["stat"] == playbook_stat].iloc[0]
     higher_is_better = bool(stat_bound_row["higher_is_better"])
     delta_col = f"DELTA_{playbook_stat}_PCTILE"
@@ -305,43 +349,67 @@ with tab_playbook:
 
     c1, c2, c3 = st.columns(3)
     c1.markdown(
-        f'<div class="kpi-label">Biggest jump</div>'
-        f'<div class="kpi-value-fixed" style="font-size:22px; color:{COLOR_JUMPED};">{biggest["_signed_delta"]:+.2f}</div>'
+        f'<div class="kpi-label">&#9650; Biggest jump</div>'
+        f'<div class="kpi-value-fixed" style="font-size:26px; color:{COLOR_JUMPED};">{biggest["_signed_delta"]:+.2f}</div>'
         f'<div style="font-size:13px; color:{TEXT_MUTED};">{biggest["TEAM_NAME"]} &middot; {biggest["season"]}</div>',
         unsafe_allow_html=True,
     )
     c2.markdown(
-        f'<div class="kpi-label">Average jump (teams that reached the bracket)</div>'
-        f'<div class="kpi-value-fixed" style="font-size:22px;">{avg_jump:+.2f}</div>',
+        f'<div class="kpi-label">&#9679; Average jump</div>'
+        f'<div class="kpi-value-fixed" style="font-size:26px;">{avg_jump:+.2f}</div>'
+        f'<div style="font-size:13px; color:{TEXT_MUTED};">teams that reached the bracket</div>',
         unsafe_allow_html=True,
     )
     c3.markdown(
-        f'<div class="kpi-label">Smallest jump</div>'
-        f'<div class="kpi-value-fixed" style="font-size:22px; color:{COLOR_STAYED};">{smallest["_signed_delta"]:+.2f}</div>'
+        f'<div class="kpi-label">&#9660; Smallest jump</div>'
+        f'<div class="kpi-value-fixed" style="font-size:26px; color:{COLOR_STAYED};">{smallest["_signed_delta"]:+.2f}</div>'
         f'<div style="font-size:13px; color:{TEXT_MUTED};">{smallest["TEAM_NAME"]} &middot; {smallest["season"]}</div>',
         unsafe_allow_html=True,
     )
 
-    fig_stat_detail = go.Figure()
-    fig_stat_detail.add_trace(go.Bar(
-        y=jumped_sorted["TEAM_NAME"] + " (" + jumped_sorted["season"] + ")",
-        x=jumped_sorted["_signed_delta"], orientation="h",
-        marker_color=[
-            COLOR_JUMPED if v >= avg_jump else COLOR_NEUTRAL for v in jumped_sorted["_signed_delta"]
-        ],
-        text=[f"{v:+.2f}" for v in jumped_sorted["_signed_delta"]], textposition="outside",
-        textfont=dict(family="JetBrains Mono, monospace", size=10),
-    ))
-    fig_stat_detail.add_vline(x=avg_jump, line_dash="dash", line_color=TEXT_MUTED,
-                               annotation_text="average", annotation_font_size=10)
-    fig_stat_detail.update_layout(
-        plot_bgcolor=BG, paper_bgcolor=BG, font_family="Inter", font_color=TEXT,
-        height=max(400, 22 * len(jumped_sorted)),
-        margin=dict(l=10, r=50, t=10, b=10),
-        xaxis=dict(gridcolor="#e5e5e2", title=f"{playbook_stat} change (sign-corrected, positive = improvement)"),
-        yaxis=dict(showgrid=False, autorange="reversed"), showlegend=False,
+    st.markdown(f"<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+    st.markdown(f"**Where each team started vs. where they ended up** &mdash; {pretty(playbook_stat)}")
+    st.caption(
+        "League percentile before (hollow) and after (filled) the turnaround "
+        "season, one line per team, sorted by improvement. Both ends already "
+        "account for direction, so a line sloping UP always means genuine "
+        "improvement, regardless of the underlying stat."
     )
-    st.plotly_chart(fig_stat_detail, use_container_width=True)
+
+    next_col = f"NEXT_{playbook_stat}_PCTILE"
+    level_col = f"{playbook_stat}_PCTILE"
+    jumped_sorted["_before"] = jumped_sorted[level_col] if higher_is_better else (1 - jumped_sorted[level_col])
+    jumped_sorted["_after"] = jumped_sorted[next_col] if higher_is_better else (1 - jumped_sorted[next_col])
+    jumped_sorted["_team_label"] = jumped_sorted["TEAM_NAME"] + " (" + jumped_sorted["season"] + ")"
+    slope_order = jumped_sorted.sort_values("_signed_delta", ascending=True)["_team_label"].tolist()
+
+    fig_slope = go.Figure()
+    for _, row in jumped_sorted.iterrows():
+        line_color = COLOR_JUMPED if row["_after"] >= row["_before"] else COLOR_STAYED
+        fig_slope.add_trace(go.Scatter(
+            x=[row["_before"], row["_after"]], y=[row["_team_label"]] * 2,
+            mode="lines", line=dict(color=line_color, width=2), showlegend=False,
+            hoverinfo="skip",
+        ))
+    fig_slope.add_trace(go.Scatter(
+        x=jumped_sorted["_before"], y=jumped_sorted["_team_label"], mode="markers",
+        marker=dict(size=9, color=BG, line=dict(color=TEXT_MUTED, width=1.5)),
+        name="Before", hovertemplate="Before: %{x:.2f}<extra></extra>",
+    ))
+    fig_slope.add_trace(go.Scatter(
+        x=jumped_sorted["_after"], y=jumped_sorted["_team_label"], mode="markers",
+        marker=dict(size=9, color=style["primary"]),
+        name="After", hovertemplate="After: %{x:.2f}<extra></extra>",
+    ))
+    fig_slope.update_layout(
+        plot_bgcolor=BG, paper_bgcolor=BG, font_family="Inter", font_color=TEXT,
+        height=max(420, 24 * len(jumped_sorted)),
+        margin=dict(l=10, r=20, t=10, b=10),
+        xaxis=dict(gridcolor="#e5e5e2", title="League percentile (0=worst, 1=best)", range=[0, 1]),
+        yaxis=dict(showgrid=False, categoryarray=slope_order, categoryorder="array"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    st.plotly_chart(fig_slope, use_container_width=True)
 
     st.markdown("---")
     st.subheader("Turnaround stories")
@@ -373,24 +441,31 @@ with tab_diagnostic:
     diag_rows = []
     for col in LEVEL_FEATURES:
         stat_name = col.replace("_PCTILE", "")
+        if stat_name in DUPLICATE_STATS:
+            continue
         raw_val = selected_row[col]
         bound_row = delta_summary_df[delta_summary_df["stat"] == stat_name]
         higher_is_better = bool(bound_row.iloc[0]["higher_is_better"]) if len(bound_row) > 0 else True
         display_val = raw_val if higher_is_better else (1 - raw_val)
-        diag_rows.append({"stat": stat_name, "percentile": display_val})
+        diag_rows.append({"stat": stat_name, "label": pretty(stat_name), "percentile": display_val})
     diag_df = pd.DataFrame(diag_rows).sort_values("percentile")
 
     fig3 = go.Figure()
     fig3.add_trace(go.Bar(
-        y=diag_df["stat"], x=diag_df["percentile"], orientation="h",
-        marker_color=[COLOR_STAYED if v < 0.5 else COLOR_JUMPED for v in diag_df["percentile"]],
+        y=diag_df["label"], x=diag_df["percentile"], orientation="h",
+        marker=dict(
+            color=diag_df["percentile"],
+            colorscale=[[0, COLOR_STAYED], [0.5, "#f0ede6"], [1, COLOR_JUMPED]],
+            cmin=0, cmax=1, line=dict(width=0),
+        ),
         text=[f"{v:.2f}" for v in diag_df["percentile"]], textposition="outside",
-        textfont=dict(family="JetBrains Mono, monospace", size=11),
+        textfont=dict(family="JetBrains Mono, monospace", size=13, color=TEXT),
+        hovertemplate="<b>%{y}</b><br>%{x:.2f}<extra></extra>",
     ))
     fig3.add_vline(x=0.5, line_dash="dash", line_color=TEXT_MUTED)
     fig3.update_layout(
         plot_bgcolor=BG, paper_bgcolor=BG, font_family="Inter", font_color=TEXT,
-        height=540, margin=dict(l=10, r=30, t=10, b=10), xaxis_range=[0, 1.08],
+        height=520, margin=dict(l=10, r=30, t=10, b=10), xaxis_range=[0, 1.08],
         xaxis=dict(gridcolor="#e5e5e2"), yaxis=dict(showgrid=False),
         showlegend=False,
     )
@@ -421,7 +496,7 @@ with tab_diagnostic:
     gap_rows = []
     for _, brow in benchmark_df.iterrows():
         stat = brow["stat"]
-        if stat == "PACE":
+        if stat == "PACE" or stat in DUPLICATE_STATS:
             continue
         level_col = f"{stat}_PCTILE"
         if level_col not in selected_row.index:
@@ -438,7 +513,7 @@ with tab_diagnostic:
         raw_p10 = float(bound_row.iloc[0]["p10"])
         max_realistic = raw_p90 if higher_is_better else -raw_p10
         gap_rows.append({
-            "stat": stat, "current": current_val, "playoff_avg": target_val, "gap": gap,
+            "stat": stat, "label": pretty(stat), "current": current_val, "playoff_avg": target_val, "gap": gap,
             "max_realistic_1yr_gain": max_realistic, "closeable_in_1_season": gap <= max_realistic,
         })
 
@@ -446,10 +521,14 @@ with tab_diagnostic:
 
     fig4 = go.Figure()
     fig4.add_trace(go.Bar(
-        y=gap_df["stat"], x=gap_df["gap"], orientation="h",
-        marker_color=[COLOR_JUMPED if c else COLOR_STAYED for c in gap_df["closeable_in_1_season"]],
+        y=gap_df["label"], x=gap_df["gap"], orientation="h",
+        marker=dict(
+            color=[COLOR_JUMPED if c else COLOR_STAYED for c in gap_df["closeable_in_1_season"]],
+            line=dict(width=0),
+        ),
         text=[f"{v:+.2f}" for v in gap_df["gap"]], textposition="outside",
-        textfont=dict(family="JetBrains Mono, monospace", size=11),
+        textfont=dict(family="JetBrains Mono, monospace", size=13, color=TEXT),
+        hovertemplate="<b>%{y}</b><br>Gap: %{x:+.2f}<extra></extra>",
     ))
     fig4.add_vline(x=0, line_color=TEXT_MUTED)
     fig4.update_layout(
@@ -462,8 +541,8 @@ with tab_diagnostic:
 
     with st.expander("Full numbers"):
         st.dataframe(
-            gap_df.rename(columns={
-                "stat": "Stat", "current": "Current pctile", "playoff_avg": "Playoff avg pctile",
+            gap_df.drop(columns=["stat"]).rename(columns={
+                "label": "Stat", "current": "Current pctile", "playoff_avg": "Playoff avg pctile",
                 "gap": "Gap", "max_realistic_1yr_gain": "Biggest 1-season gain seen historically",
                 "closeable_in_1_season": "Realistic in 1 season",
             }),
@@ -525,17 +604,19 @@ with tab_whatif:
                     col.replace("ROOKIES_", "").replace("_", " ").title(), min_value=lo, max_value=hi, value=0.0,
                 )
 
-            st.markdown("**Component stat changes** (year-over-year, percentile points)")
-            st.caption("For a few stats, moving the slider NEGATIVE is the improvement direction (opponent shooting, turnovers, points allowed) -- marked below.")
+            st.markdown("**Component stat changes** (year-over-year)")
+            st.caption("For stats where lower is actually better (opponent shooting, turnovers, points allowed), moving the slider left is the improvement direction -- marked below.")
             delta_inputs = {}
             for col in DELTA_FEATURES:
                 stat_name = col.replace("DELTA_", "").replace("_PCTILE", "")
+                if stat_name in DUPLICATE_STATS:
+                    continue
                 bounds_row = delta_summary_df[delta_summary_df["stat"] == stat_name]
                 if len(bounds_row) == 0:
                     continue
                 lo, hi = float(bounds_row.iloc[0]["p10"]), float(bounds_row.iloc[0]["p90"])
                 higher_is_better = bool(bounds_row.iloc[0]["higher_is_better"])
-                label = stat_name if higher_is_better else f"{stat_name} (lower = better)"
+                label = pretty(stat_name) if higher_is_better else f"{pretty(stat_name)} (lower = better)"
                 delta_inputs[col] = st.slider(label, min_value=lo, max_value=hi, value=0.0)
 
         scenario_row = build_input_row(delta_inputs, rookie_inputs, star_added_input)
