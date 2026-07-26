@@ -229,12 +229,134 @@ st.markdown("---")
 # supporting evidence (What Changed), then raw data browse (Case Explorer)
 # ---------------------------------------------------------------------------
 
-tab_diagnostic, tab_whatif, tab_changed, tab_explorer = st.tabs(
-    ["Team Diagnostic", "What-If", "What Changed", "Case Explorer"]
+# ---------------------------------------------------------------------------
+# Tabs -- Turnaround Playbook first (the actual differentiator: which teams
+# pulled this off and how), then What-If, then Team Lookup (any team/season,
+# demoted since it's the generic view), then Case Explorer.
+# ---------------------------------------------------------------------------
+
+tab_playbook, tab_whatif, tab_diagnostic, tab_explorer = st.tabs(
+    ["Turnaround Playbook", "What-If", "Team Lookup", "Case Explorer"]
 )
 
 # ---------------------------------------------------------------------------
-# Tab 1: Team Diagnostic
+# Tab 0: Turnaround Playbook -- THE differentiator. Not "browse any team's
+# stats" (generic) -- specifically which of the 90 bottom-10 teams reached
+# the playoffs, what changed for them vs. teams that stayed stuck, and the
+# actual team-season examples behind each stat (biggest jump, smallest
+# jump, average), not just an abstract aggregate number.
+# ---------------------------------------------------------------------------
+
+with tab_playbook:
+    jumped_df = case_df[case_df["NEXT_target_b_made_bracket"] == True].copy()
+    stayed_df = case_df[case_df["NEXT_target_b_made_bracket"] == False].copy()
+
+    st.subheader(f"{len(jumped_df)} teams turned a bottom-10 season into a playoff bracket appearance")
+    st.caption(
+        "Out of 90 bottom-10 team-seasons (2016-17 to 2024-25). Everything "
+        "below is built from these teams specifically -- not a generic "
+        "league-wide stat browser."
+    )
+
+    TAUTOLOGICAL_STATS = {"NET_RATING", "OFF_RATING", "DEF_RATING", "CLUTCH_NET_RATING"}
+    chart_df = delta_summary_df[~delta_summary_df["stat"].isin(TAUTOLOGICAL_STATS)]
+    sorted_df = chart_df.sort_values("improvement", ascending=True)
+
+    fig_playbook = go.Figure()
+    fig_playbook.add_trace(go.Bar(
+        y=sorted_df["stat"], x=sorted_df["improvement"], orientation="h",
+        marker_color=["#999999" if s == "PACE" else (COLOR_JUMPED if v > 0 else COLOR_STAYED)
+                      for s, v in zip(sorted_df["stat"], sorted_df["improvement"])],
+        text=[f"{v:+.2f}" for v in sorted_df["improvement"]], textposition="outside",
+        textfont=dict(family="JetBrains Mono, monospace", size=11),
+    ))
+    fig_playbook.add_vline(x=0, line_color=TEXT_MUTED)
+    fig_playbook.update_layout(
+        plot_bgcolor=BG, paper_bgcolor=BG, font_family="Inter", font_color=TEXT, height=460,
+        xaxis=dict(gridcolor="#e5e5e2", title="Improvement (positive = genuinely helped teams reach the bracket)"),
+        yaxis=dict(showgrid=False), margin=dict(l=10, r=40, t=10, b=10), showlegend=False,
+    )
+    st.plotly_chart(fig_playbook, use_container_width=True)
+    st.caption(
+        "PACE excluded (no inherent good direction). NET/OFF/DEF/CLUTCH_NET "
+        "rating excluded -- they mechanically restate the outcome (better "
+        "record = better rating) rather than explain what drove it."
+    )
+
+    st.markdown("---")
+    st.subheader("Which teams actually drove each stat")
+    st.caption(
+        "Pick a stat to see the specific team-seasons behind the aggregate number -- "
+        "who improved it the most, who barely moved it at all (and still made the "
+        "bracket anyway), and where the typical successful team landed."
+    )
+
+    playbook_stat = st.selectbox("Stat", options=chart_df["stat"].tolist(), key="playbook_stat")
+    stat_bound_row = delta_summary_df[delta_summary_df["stat"] == playbook_stat].iloc[0]
+    higher_is_better = bool(stat_bound_row["higher_is_better"])
+    delta_col = f"DELTA_{playbook_stat}_PCTILE"
+
+    jumped_df["_signed_delta"] = jumped_df[delta_col] if higher_is_better else -jumped_df[delta_col]
+    jumped_sorted = jumped_df.sort_values("_signed_delta", ascending=False)
+
+    biggest = jumped_sorted.iloc[0]
+    smallest = jumped_sorted.iloc[-1]
+    avg_jump = jumped_df["_signed_delta"].mean()
+
+    c1, c2, c3 = st.columns(3)
+    c1.markdown(
+        f'<div class="kpi-label">Biggest jump</div>'
+        f'<div class="kpi-value-fixed" style="font-size:22px; color:{COLOR_JUMPED};">{biggest["_signed_delta"]:+.2f}</div>'
+        f'<div style="font-size:13px; color:{TEXT_MUTED};">{biggest["TEAM_NAME"]} &middot; {biggest["season"]}</div>',
+        unsafe_allow_html=True,
+    )
+    c2.markdown(
+        f'<div class="kpi-label">Average jump (teams that reached the bracket)</div>'
+        f'<div class="kpi-value-fixed" style="font-size:22px;">{avg_jump:+.2f}</div>',
+        unsafe_allow_html=True,
+    )
+    c3.markdown(
+        f'<div class="kpi-label">Smallest jump</div>'
+        f'<div class="kpi-value-fixed" style="font-size:22px; color:{COLOR_STAYED};">{smallest["_signed_delta"]:+.2f}</div>'
+        f'<div style="font-size:13px; color:{TEXT_MUTED};">{smallest["TEAM_NAME"]} &middot; {smallest["season"]}</div>',
+        unsafe_allow_html=True,
+    )
+
+    fig_stat_detail = go.Figure()
+    fig_stat_detail.add_trace(go.Bar(
+        y=jumped_sorted["TEAM_NAME"] + " (" + jumped_sorted["season"] + ")",
+        x=jumped_sorted["_signed_delta"], orientation="h",
+        marker_color=[
+            COLOR_JUMPED if v >= avg_jump else COLOR_NEUTRAL for v in jumped_sorted["_signed_delta"]
+        ],
+        text=[f"{v:+.2f}" for v in jumped_sorted["_signed_delta"]], textposition="outside",
+        textfont=dict(family="JetBrains Mono, monospace", size=10),
+    ))
+    fig_stat_detail.add_vline(x=avg_jump, line_dash="dash", line_color=TEXT_MUTED,
+                               annotation_text="average", annotation_font_size=10)
+    fig_stat_detail.update_layout(
+        plot_bgcolor=BG, paper_bgcolor=BG, font_family="Inter", font_color=TEXT,
+        height=max(400, 22 * len(jumped_sorted)),
+        margin=dict(l=10, r=50, t=10, b=10),
+        xaxis=dict(gridcolor="#e5e5e2", title=f"{playbook_stat} change (sign-corrected, positive = improvement)"),
+        yaxis=dict(showgrid=False, autorange="reversed"), showlegend=False,
+    )
+    st.plotly_chart(fig_stat_detail, use_container_width=True)
+
+    st.markdown("---")
+    st.subheader("Turnaround stories")
+    st.caption("Every team that went bottom-10 to the playoff bracket. Sortable, filterable.")
+
+    story_cols = ["TEAM_NAME", "season", "WinPCT", "star_added", "ROOKIES_max_minutes"]
+    if "predicted_prob_target_b" in jumped_df.columns:
+        story_cols.append("predicted_prob_target_b")
+    st.dataframe(
+        jumped_df[story_cols].sort_values("season", ascending=False),
+        use_container_width=True, hide_index=True,
+    )
+
+# ---------------------------------------------------------------------------
+# Tab: Team Lookup (demoted -- generic any-team/any-season reference view)
 # ---------------------------------------------------------------------------
 
 with tab_diagnostic:
@@ -434,64 +556,31 @@ with tab_whatif:
 # Tab 3: What Changed
 # ---------------------------------------------------------------------------
 
-with tab_changed:
-    st.subheader("Which stats actually separated the teams that turned around")
-    st.caption(
-        "Sign-corrected gap between teams that reached the bracket and teams that "
-        "didn't -- positive always means 'genuinely helped,' accounting for stats "
-        "where lower is the good direction. PACE excluded (no inherent good "
-        "direction). NET/OFF/DEF/CLUTCH_NET rating excluded (mechanically restate "
-        "the outcome rather than explain it)."
-    )
-
-    TAUTOLOGICAL_STATS = {"NET_RATING", "OFF_RATING", "DEF_RATING", "CLUTCH_NET_RATING"}
-    chart_df = delta_summary_df[~delta_summary_df["stat"].isin(TAUTOLOGICAL_STATS)]
-    sorted_df = chart_df.sort_values("improvement", ascending=True)
-
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        y=sorted_df["stat"], x=sorted_df["improvement"], orientation="h",
-        marker_color=["#999999" if s == "PACE" else (COLOR_JUMPED if v > 0 else COLOR_STAYED)
-                      for s, v in zip(sorted_df["stat"], sorted_df["improvement"])],
-        text=[f"{v:+.2f}" for v in sorted_df["improvement"]], textposition="outside",
-        textfont=dict(family="JetBrains Mono, monospace", size=11),
-    ))
-    fig.add_vline(x=0, line_color=TEXT_MUTED)
-    fig.update_layout(
-        plot_bgcolor=BG, paper_bgcolor=BG, font_family="Inter", font_color=TEXT, height=500,
-        xaxis=dict(gridcolor="#e5e5e2", title="Improvement (positive = genuinely helped)"),
-        yaxis=dict(showgrid=False), margin=dict(l=10, r=40, t=10, b=10), showlegend=False,
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
     st.markdown("---")
-    st.subheader("Realistic range of improvement, per stat")
-    st.caption("Actual 10th-90th percentile of year-over-year change across all 90 bottom-10 team-seasons.")
-
-    selected_stat = st.selectbox("Stat", options=chart_df["stat"].tolist())
-    stat_row = chart_df[chart_df["stat"] == selected_stat].iloc[0]
+    st.subheader(f"Realistic range for {playbook_stat}")
+    st.caption("Actual 10th-90th percentile of year-over-year change across all 90 bottom-10 team-seasons (not just the ones that reached the bracket).")
 
     fig2 = go.Figure()
     fig2.add_trace(go.Scatter(
-        x=[stat_row["p10"], stat_row["p90"]], y=[0, 0], mode="lines",
+        x=[stat_bound_row["p10"], stat_bound_row["p90"]], y=[0, 0], mode="lines",
         line=dict(color=TEXT_MUTED, width=6), showlegend=False,
     ))
     fig2.add_trace(go.Scatter(
-        x=[stat_row["median"]], y=[0], mode="markers",
+        x=[stat_bound_row["median"]], y=[0], mode="markers",
         marker=dict(size=16, color=style["primary"]), name="Historical median",
     ))
     fig2.update_layout(
         plot_bgcolor=BG, paper_bgcolor=BG, font_family="Inter", font_color=TEXT, height=140,
         yaxis=dict(visible=False), margin=dict(l=10, r=10, t=10, b=10),
-        xaxis=dict(title=f"Year-over-year change in {selected_stat}", gridcolor="#e5e5e2"),
+        xaxis=dict(title=f"Year-over-year change in {playbook_stat}", gridcolor="#e5e5e2"),
         showlegend=False,
     )
     st.plotly_chart(fig2, use_container_width=True)
 
-    c1, c2, c3 = st.columns(3)
-    c1.markdown(f'<div class="kpi-label">10th percentile</div><div class="kpi-value-fixed" style="font-size:22px;">{stat_row["p10"]:.3f}</div>', unsafe_allow_html=True)
-    c2.markdown(f'<div class="kpi-label">Median</div><div class="kpi-value-fixed" style="font-size:22px;">{stat_row["median"]:.3f}</div>', unsafe_allow_html=True)
-    c3.markdown(f'<div class="kpi-label">90th percentile</div><div class="kpi-value-fixed" style="font-size:22px;">{stat_row["p90"]:.3f}</div>', unsafe_allow_html=True)
+    rc1, rc2, rc3 = st.columns(3)
+    rc1.markdown(f'<div class="kpi-label">10th percentile</div><div class="kpi-value-fixed" style="font-size:22px;">{stat_bound_row["p10"]:.3f}</div>', unsafe_allow_html=True)
+    rc2.markdown(f'<div class="kpi-label">Median</div><div class="kpi-value-fixed" style="font-size:22px;">{stat_bound_row["median"]:.3f}</div>', unsafe_allow_html=True)
+    rc3.markdown(f'<div class="kpi-label">90th percentile</div><div class="kpi-value-fixed" style="font-size:22px;">{stat_bound_row["p90"]:.3f}</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
 # Tab 4: Case Explorer
