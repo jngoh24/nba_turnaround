@@ -373,7 +373,9 @@ with tab_playbook:
         "League percentile before (hollow) and after (filled) the turnaround "
         "season, one line per team, sorted by improvement. Both ends already "
         "account for direction, so a line sloping UP always means genuine "
-        "improvement, regardless of the underlying stat."
+        "improvement, regardless of the underlying stat. Biggest/average/"
+        "smallest jump above are always computed across all teams, "
+        "regardless of how many are shown in the chart below."
     )
 
     next_col = f"NEXT_{playbook_stat}_PCTILE"
@@ -381,10 +383,16 @@ with tab_playbook:
     jumped_sorted["_before"] = jumped_sorted[level_col] if higher_is_better else (1 - jumped_sorted[level_col])
     jumped_sorted["_after"] = jumped_sorted[next_col] if higher_is_better else (1 - jumped_sorted[next_col])
     jumped_sorted["_team_label"] = jumped_sorted["TEAM_NAME"] + " (" + jumped_sorted["season"] + ")"
-    slope_order = jumped_sorted.sort_values("_signed_delta", ascending=True)["_team_label"].tolist()
+
+    show_n = st.slider(
+        "Show top N teams (by improvement on this stat)",
+        min_value=5, max_value=len(jumped_sorted), value=min(10, len(jumped_sorted)),
+    )
+    slope_df = jumped_sorted.head(show_n)
+    slope_order = slope_df.sort_values("_signed_delta", ascending=True)["_team_label"].tolist()
 
     fig_slope = go.Figure()
-    for _, row in jumped_sorted.iterrows():
+    for _, row in slope_df.iterrows():
         line_color = COLOR_JUMPED if row["_after"] >= row["_before"] else COLOR_STAYED
         fig_slope.add_trace(go.Scatter(
             x=[row["_before"], row["_after"]], y=[row["_team_label"]] * 2,
@@ -392,18 +400,18 @@ with tab_playbook:
             hoverinfo="skip",
         ))
     fig_slope.add_trace(go.Scatter(
-        x=jumped_sorted["_before"], y=jumped_sorted["_team_label"], mode="markers",
+        x=slope_df["_before"], y=slope_df["_team_label"], mode="markers",
         marker=dict(size=9, color=BG, line=dict(color=TEXT_MUTED, width=1.5)),
         name="Before", hovertemplate="Before: %{x:.2f}<extra></extra>",
     ))
     fig_slope.add_trace(go.Scatter(
-        x=jumped_sorted["_after"], y=jumped_sorted["_team_label"], mode="markers",
+        x=slope_df["_after"], y=slope_df["_team_label"], mode="markers",
         marker=dict(size=9, color=style["primary"]),
         name="After", hovertemplate="After: %{x:.2f}<extra></extra>",
     ))
     fig_slope.update_layout(
         plot_bgcolor=BG, paper_bgcolor=BG, font_family="Inter", font_color=TEXT,
-        height=max(420, 24 * len(jumped_sorted)),
+        height=max(380, 30 * len(slope_df)),
         margin=dict(l=10, r=20, t=10, b=10),
         xaxis=dict(gridcolor="#e5e5e2", title="League percentile (0=worst, 1=best)", range=[0, 1]),
         yaxis=dict(showgrid=False, categoryarray=slope_order, categoryorder="array"),
