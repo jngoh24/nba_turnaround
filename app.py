@@ -86,10 +86,10 @@ STAT_LABELS = {
     "FF_EFG_PCT": "Shooting Efficiency",
     "FTA_RATE": "Free Throw Rate",
     "OREB_PCT": "Offensive Rebounding",
-    "OPP_EFG_PCT": "Opponent Shooting Efficiency Allowed",
-    "OPP_FTA_RATE": "Opponent Free Throw Rate Allowed",
+    "OPP_EFG_PCT": "Opponent Shooting Efficiency",
+    "OPP_FTA_RATE": "Opponent Free Throw Rate",
     "OPP_TOV_PCT": "Turnovers Forced on Defense",
-    "OPP_OREB_PCT": "Offensive Rebounds Allowed",
+    "OPP_OREB_PCT": "Opponent Offensive Rebounding",
 }
 
 def pretty(stat_code: str) -> str:
@@ -164,19 +164,12 @@ with st.sidebar:
     st.markdown("---")
 
     st.markdown("**Team & season** (What-If, Team Lookup)")
-    # Defaults to Brooklyn Nets 2025-26 for the presentation -- falls back
-    # to the first alphabetical team/most recent season if either isn't in
-    # the bottom-10 case set (e.g. before this season's data is loaded).
-    DEFAULT_TEAM = "Brooklyn Nets"
-    DEFAULT_SEASON = "2025-26"
-    default_team_index = team_options.index(DEFAULT_TEAM) if DEFAULT_TEAM in team_options else 0
-    selected_team = st.selectbox("Team", options=team_options, index=default_team_index)
+    selected_team = st.selectbox("Team", options=team_options)
 
     season_options = sorted(
         bottom10_full_df[bottom10_full_df["TEAM_NAME"] == selected_team]["season"].unique(), reverse=True
     )
-    default_season_index = season_options.index(DEFAULT_SEASON) if DEFAULT_SEASON in season_options else 0
-    selected_season = st.selectbox("Season", options=season_options, index=default_season_index)
+    selected_season = st.selectbox("Season", options=season_options)
 
     selected_row = bottom10_full_df[
         (bottom10_full_df["TEAM_NAME"] == selected_team) & (bottom10_full_df["season"] == selected_season)
@@ -246,7 +239,7 @@ n_jumped_b = int(case_df["NEXT_target_b_made_bracket"].sum())
 jump_rate = n_jumped_b / n_total
 
 st.markdown('<div class="kicker">NBA &middot; 2016-17 TO 2024-25 &middot; BOTTOM-10 TEAM TURNAROUNDS</div>', unsafe_allow_html=True)
-st.title("One Season Turnarounds")
+st.title("From Bottom-10 to the Playoffs")
 st.markdown(
     f'<p style="font-style: italic; color: {TEXT_MUTED};">Bottom-10 teams reach the playoff bracket '
     f'<span class="badge">{jump_rate:.0%}</span> of the time -- here\'s what separates the ones that do.</p>',
@@ -304,13 +297,16 @@ with tab_playbook:
 
     if playbook_season_filter == "All Seasons":
         playbook_case_df = case_df
+        scope_caption = "2016-17 to 2024-25, 90 bottom-10 team-seasons."
     else:
         playbook_case_df = case_df[case_df["season"] == playbook_season_filter]
+        scope_caption = f"{playbook_season_filter} bottom-10 teams only ({len(playbook_case_df)} of 90)."
 
     jumped_df = playbook_case_df[playbook_case_df["NEXT_target_b_made_bracket"] == True].copy()
     stayed_df = playbook_case_df[playbook_case_df["NEXT_target_b_made_bracket"] == False].copy()
 
-    st.subheader(f"{len(jumped_df)} teams turned a bottom-10 season into a playoff appearance")
+    st.subheader(f"{len(jumped_df)} teams turned a bottom-10 season into a playoff bracket appearance")
+    st.caption(scope_caption)
 
     # Excluded from stat-level rankings/charts throughout this tab for three
     # different reasons: NET/OFF/DEF/CLUTCH_NET rating mechanically restate
@@ -513,7 +509,7 @@ with tab_playbook:
 
     st.markdown(f"<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
     st.markdown(f"**Where each team started vs. where they ended up** &mdash; {pretty(playbook_stat)}")
-    st.caption("A line sloping forward always means improvement, regardless of the stat.")
+    st.caption("A line sloping up always means improvement, regardless of the stat.")
 
     next_col = f"NEXT_{playbook_stat}_PCTILE"
     level_col = f"{playbook_stat}_PCTILE"
@@ -726,54 +722,14 @@ with tab_whatif:
             st.markdown("**Star addition**")
             star_added_input = st.checkbox("Assume a star-tier player is added this offseason")
 
-            st.markdown("**Team Composition** (fixed -- known fact about this season, not adjustable)")
-            ROOKIE_FACT_LABELS = {
-                "CURRENT_ROOKIES_on_roster_count": "Rookies on Roster",
-                "CURRENT_ROOKIES_max_minutes_per_game": "Rookie Max Min/Game",
-                "CURRENT_ROOKIES_avg_minutes_per_game": "Rookie Avg Min/Game",
-            }
+            st.markdown("**Rookies already on the roster** (fixed -- known fact about this season, not adjustable)")
             rookie_facts = []
             for col in CURRENT_ROOKIE_FEATURES:
-                label = ROOKIE_FACT_LABELS.get(col, col.replace("CURRENT_ROOKIES_", "").replace("_", " ").title())
+                label = col.replace("CURRENT_ROOKIES_", "").replace("_", " ").title()
                 val = selected_row.get(col, 0)
                 val_display = f"{val:.0f}" if pd.notna(val) else "N/A"
                 rookie_facts.append(f"**{val_display}** {label}")
             st.caption(" &nbsp;&middot;&nbsp; ".join(rookie_facts))
-
-            # Selected team's own roster snapshot -- same fields shown on the
-            # similar-team cards below, so the two are directly comparable.
-            # Defensive .get()/pd.notna() throughout: degrades gracefully if
-            # a field is missing rather than crashing.
-            own_roster_bits = []
-            if pd.notna(selected_row.get("ROSTER_pct_min_guard")):
-                own_roster_bits.append(
-                    f"{selected_row['ROSTER_pct_min_guard']:.0%} G / "
-                    f"{selected_row['ROSTER_pct_min_forward']:.0%} F / "
-                    f"{selected_row['ROSTER_pct_min_center']:.0%} C"
-                )
-            if pd.notna(selected_row.get("ROSTER_avg_height_in")):
-                h = float(selected_row["ROSTER_avg_height_in"])
-                own_roster_bits.append(f"Avg height {int(h // 12)}'{round(h % 12)}\"")
-            if pd.notna(selected_row.get("ROSTER_avg_age_top5")):
-                own_roster_bits.append(f"Top-5 rotation avg age {float(selected_row['ROSTER_avg_age_top5']):.1f}")
-            if own_roster_bits:
-                st.caption(" &middot; ".join(own_roster_bits))
-
-            # Career stage mix (minutes-weighted): Rookie / Early Career
-            # (1-3 yrs) / Mid Career (4-7 yrs) / Veteran (8+ yrs), with
-            # undrafted players bucketed by age as a fallback proxy.
-            CAREER_STAGE_COLS = [
-                ("Rookie", "ROSTER_pct_min_rookie"),
-                ("Early Career", "ROSTER_pct_min_early_career"),
-                ("Mid Career", "ROSTER_pct_min_mid_career"),
-                ("Veteran", "ROSTER_pct_min_veteran"),
-            ]
-            career_bits = [
-                f"{selected_row[col]:.0%} {label}" for label, col in CAREER_STAGE_COLS
-                if pd.notna(selected_row.get(col))
-            ]
-            if career_bits:
-                st.caption(" / ".join(career_bits))
 
             st.markdown("**Next season's incoming rookies**")
             next_rookie_inputs = {}
@@ -849,22 +805,11 @@ with tab_whatif:
         height_range = height_max - height_min if pd.notna(height_max - height_min) and (height_max - height_min) > 0 else 1
         case_df["ROSTER_height_norm"] = (case_df["ROSTER_avg_height_in"] - height_min) / height_range
         similarity_pool_df["ROSTER_height_norm"] = (similarity_pool_df["ROSTER_avg_height_in"] - height_min) / height_range
-
-        # Use the sidebar-selected team's OWN ROSTER_avg_height_in (from
-        # bottom10_full_df / team_season_features.csv, already confirmed
-        # correct -- it's what Team Composition displays) instead of
-        # re-looking it up in case_df. The two exports have drifted out of
-        # sync for some team-seasons: case_df's balldontlie join predates a
-        # refresh that made it into team_season_features.csv, so a team can
-        # have real height data in the sidebar but still show up as
-        # "missing" here if only case_df is trusted. Normalization range
-        # (height_min/height_range) still comes from case_df -- that's the
-        # comparison pool, so the scale needs to match it.
+        selected_row_full = case_df[
+            (case_df["TEAM_NAME"] == selected_row["TEAM_NAME"]) & (case_df["season"] == selected_row["season"])
+        ]
+        selected_height_norm = selected_row_full["ROSTER_height_norm"].iloc[0] if len(selected_row_full) else None
         selected_row = selected_row.copy()
-        selected_own_height = selected_row.get("ROSTER_avg_height_in")
-        selected_height_norm = (
-            (float(selected_own_height) - height_min) / height_range if pd.notna(selected_own_height) else None
-        )
         selected_row["ROSTER_height_norm"] = selected_height_norm
 
         extended_features = similarity_features + ROSTER_SIM_COLS + ["ROSTER_height_norm"]
@@ -909,16 +854,12 @@ with tab_whatif:
 
             st.markdown('<div class="kpi-label" style="margin-top:16px;">Most similar turnarounds</div>', unsafe_allow_html=True)
             st.caption("Based on current-season stat profile.")
-            if "whatif_selected_similar" not in st.session_state:
-                st.session_state["whatif_selected_similar"] = None
-
             drill_down_choice = None
             if not similar_matches:
                 st.caption("No comparable teams found.")
             else:
-                for match_idx, (dist, srow) in enumerate(similar_matches):
+                for dist, srow in similar_matches:
                     sim_style = TEAM_STYLE.get(srow["TEAM_NAME"], DEFAULT_STYLE)
-                    sim_label = f"{srow['TEAM_NAME']} ({srow['season']})"
                     if sim_style["slug"]:
                         st.image(f"https://i.logocdn.com/nba/current/{sim_style['slug']}.svg", width=32)
                     st.markdown(
@@ -930,38 +871,12 @@ with tab_whatif:
                         f"Star added: {'Yes' if srow.get('star_added') else 'No'} &middot; "
                         f"Rookies: {int(srow.get('NEXT_ROOKIES_on_roster_count', 0))}"
                     )
-
-                    roster_bits = []
-                    if pd.notna(srow.get("ROSTER_pct_min_guard")):
-                        roster_bits.append(
-                            f"{srow['ROSTER_pct_min_guard']:.0%} G / "
-                            f"{srow['ROSTER_pct_min_forward']:.0%} F / "
-                            f"{srow['ROSTER_pct_min_center']:.0%} C"
-                        )
-                    if pd.notna(srow.get("ROSTER_avg_height_in")):
-                        h = float(srow["ROSTER_avg_height_in"])
-                        roster_bits.append(f"Avg height {int(h // 12)}'{round(h % 12)}\"")
-                    if pd.notna(srow.get("ROSTER_avg_age_top5")):
-                        roster_bits.append(f"Top-5 rotation avg age {float(srow['ROSTER_avg_age_top5']):.1f}")
-                    if roster_bits:
-                        st.caption(" &middot; ".join(roster_bits))
-
-                    career_bits = [
-                        f"{srow[col]:.0%} {label}" for label, col in CAREER_STAGE_COLS
-                        if pd.notna(srow.get(col))
-                    ]
-                    if career_bits:
-                        st.caption(" / ".join(career_bits))
-
-                    is_selected = st.session_state["whatif_selected_similar"] == sim_label
-                    btn_label = "Hide comparison" if is_selected else "View comparison"
-                    if st.button(btn_label, key=f"whatif_sim_btn_{match_idx}", use_container_width=True):
-                        st.session_state["whatif_selected_similar"] = None if is_selected else sim_label
                     st.markdown("---")
 
-                drill_down_choice = st.session_state["whatif_selected_similar"]
+                sim_labels = [f"{srow['TEAM_NAME']} ({srow['season']})" for _, srow in similar_matches]
+                drill_down_choice = st.radio("View raw stats vs.", options=["None"] + sim_labels, label_visibility="collapsed")
 
-        if drill_down_choice:
+        if drill_down_choice and drill_down_choice != "None":
             chosen_row = None
             for dist, srow in similar_matches:
                 if f"{srow['TEAM_NAME']} ({srow['season']})" == drill_down_choice:
