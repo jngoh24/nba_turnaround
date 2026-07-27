@@ -239,7 +239,7 @@ n_jumped_b = int(case_df["NEXT_target_b_made_bracket"].sum())
 jump_rate = n_jumped_b / n_total
 
 st.markdown('<div class="kicker">NBA &middot; 2016-17 TO 2024-25 &middot; BOTTOM-10 TEAM TURNAROUNDS</div>', unsafe_allow_html=True)
-st.title("From Bottom-10 to the Playoffs")
+st.title("One Season Turnarounds")
 st.markdown(
     f'<p style="font-style: italic; color: {TEXT_MUTED};">Bottom-10 teams reach the playoff bracket '
     f'<span class="badge">{jump_rate:.0%}</span> of the time -- here\'s what separates the ones that do.</p>',
