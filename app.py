@@ -302,8 +302,42 @@ with tab_playbook:
     jump_size_col = "DELTA_NET_RATING_PCTILE"
     jumps_ranked = jumped_df.sort_values(jump_size_col, ascending=False).head(5)
 
+    # Next-season WinPCT isn't in the case table -- look it up directly
+    # from the full team-season table (every team's actual next-season row).
+    next_winpct_lookup = full_df.set_index(["TEAM_ID", "season_start_year"])["WinPCT"].to_dict()
+
     for _, jrow in jumps_ranked.iterrows():
-        with st.expander(f"**{jrow['TEAM_NAME']}** &middot; {jrow['season']}"):
+        jump_style = TEAM_STYLE.get(jrow["TEAM_NAME"], DEFAULT_STYLE)
+        next_winpct = next_winpct_lookup.get((jrow["TEAM_ID"], jrow["season_start_year"] + 1))
+
+        with st.expander(f"{jrow['TEAM_NAME']} — {jrow['season']}"):
+            head_logo, head_text = st.columns([1, 5])
+            with head_logo:
+                if jump_style["slug"]:
+                    st.image(f"https://i.logocdn.com/nba/current/{jump_style['slug']}.svg", width=64)
+            with head_text:
+                st.markdown(
+                    f'<div style="font-family:\'Source Serif 4\',serif; font-size:22px; font-weight:700; '
+                    f'color:{jump_style["primary"]};">{jrow["TEAM_NAME"]}</div>'
+                    f'<div class="kicker">{jrow["season"]}</div>',
+                    unsafe_allow_html=True,
+                )
+
+            wc1, wc2, wc3 = st.columns(3)
+            wc1.markdown(f'<div class="kpi-label">Win % that season</div><div class="kpi-value-fixed" style="font-size:24px;">{jrow["WinPCT"]:.3f}</div>', unsafe_allow_html=True)
+            wc2.markdown('<div class="kpi-label" style="text-align:center; padding-top:14px;">&#8594;</div>', unsafe_allow_html=True)
+            if next_winpct is not None:
+                wc3.markdown(f'<div class="kpi-label">Win % next season</div><div class="kpi-value" style="font-size:24px; color:{COLOR_JUMPED};">{next_winpct:.3f}</div>', unsafe_allow_html=True)
+
+            st.markdown("<div style='margin-top:14px;'></div>", unsafe_allow_html=True)
+            st.markdown('<div class="kpi-label">Roster moves</div>', unsafe_allow_html=True)
+            r1, r2, r3 = st.columns(3)
+            r1.markdown(f'<div class="kpi-value-fixed" style="font-size:20px;">{"Yes" if jrow.get("star_added") else "No"}</div><div style="font-size:12px; color:{TEXT_MUTED};">Star added</div>', unsafe_allow_html=True)
+            r2.markdown(f'<div class="kpi-value-fixed" style="font-size:20px;">{int(jrow.get("NEXT_ROOKIES_on_roster_count", 0))}</div><div style="font-size:12px; color:{TEXT_MUTED};">Rookies added</div>', unsafe_allow_html=True)
+            top_rookie_min = jrow.get("NEXT_ROOKIES_max_minutes_per_game", 0)
+            top_rookie_min_display = f"{top_rookie_min:.0f}" if pd.notna(top_rookie_min) else "0"
+            r3.markdown(f'<div class="kpi-value-fixed" style="font-size:20px;">{top_rookie_min_display}</div><div style="font-size:12px; color:{TEXT_MUTED};">Top rookie min/game</div>', unsafe_allow_html=True)
+
             stat_deltas = []
             for stat in delta_summary_df["stat"]:
                 if stat in EXCLUDED_STATS or stat in DUPLICATE_STATS:
@@ -316,17 +350,15 @@ with tab_playbook:
                 stat_deltas.append((stat, signed))
             top_stats = sorted(stat_deltas, key=lambda x: x[1], reverse=True)[:3]
 
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("**Most improved stats**")
-                for stat, signed in top_stats:
-                    st.markdown(f"- {pretty(stat)}: **{signed:+.2f}**")
-            with c2:
-                st.markdown("**Roster moves**")
-                st.markdown(f"- Star added: **{'Yes' if jrow.get('star_added') else 'No'}**")
-                st.markdown(f"- Rookies added: **{int(jrow.get('NEXT_ROOKIES_on_roster_count', 0))}**")
-                if jrow.get("NEXT_ROOKIES_on_roster_count", 0) > 0:
-                    st.markdown(f"- Top rookie min/game: **{jrow.get('NEXT_ROOKIES_max_minutes_per_game', 0):.0f}**")
+            st.markdown("<div style='margin-top:14px;'></div>", unsafe_allow_html=True)
+            st.markdown('<div class="kpi-label">Most improved stats</div>', unsafe_allow_html=True)
+            s1, s2, s3 = st.columns(3)
+            for scol, (stat, signed) in zip([s1, s2, s3], top_stats):
+                scol.markdown(
+                    f'<div class="kpi-value" style="font-size:20px; color:{COLOR_JUMPED};">{signed:+.2f}</div>'
+                    f'<div style="font-size:12px; color:{TEXT_MUTED};">{pretty(stat)}</div>',
+                    unsafe_allow_html=True,
+                )
 
     st.markdown("---")
     chart_df = delta_summary_df[
