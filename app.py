@@ -821,6 +821,7 @@ with tab_whatif:
 
             st.markdown('<div class="kpi-label" style="margin-top:16px;">Most similar turnarounds</div>', unsafe_allow_html=True)
             st.caption("Based on current-season stat profile.")
+            drill_down_choice = None
             if not similar_matches:
                 st.caption("No comparable teams found.")
             else:
@@ -838,6 +839,34 @@ with tab_whatif:
                         f"Rookies: {int(srow.get('NEXT_ROOKIES_on_roster_count', 0))}"
                     )
                     st.markdown("---")
+
+                sim_labels = [f"{srow['TEAM_NAME']} ({srow['season']})" for _, srow in similar_matches]
+                drill_down_choice = st.radio("View raw stats vs.", options=["None"] + sim_labels, label_visibility="collapsed")
+
+        if drill_down_choice and drill_down_choice != "None":
+            chosen_row = None
+            for dist, srow in similar_matches:
+                if f"{srow['TEAM_NAME']} ({srow['season']})" == drill_down_choice:
+                    chosen_row = srow
+                    break
+            if chosen_row is not None:
+                st.markdown("---")
+                st.markdown(f"#### {team_name} vs. {chosen_row['TEAM_NAME']} ({chosen_row['season']}) -- raw stats")
+                raw_rows = []
+                for lf in similarity_features:
+                    raw_col = lf.replace("_PCTILE", "")
+                    if raw_col not in selected_row.index or raw_col not in chosen_row.index:
+                        continue
+                    sel_val = float(selected_row[raw_col])
+                    cmp_val = float(chosen_row[raw_col])
+                    raw_rows.append({
+                        "Stat": pretty(raw_col),
+                        team_name: round(sel_val, 3),
+                        chosen_row["TEAM_NAME"]: round(cmp_val, 3),
+                        "Difference": round(cmp_val - sel_val, 3),
+                    })
+                raw_df = pd.DataFrame(raw_rows)
+                st.dataframe(raw_df, use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------------------------
 # Tab 4: Case Explorer
