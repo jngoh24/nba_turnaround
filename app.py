@@ -513,7 +513,7 @@ with tab_playbook:
 
     st.markdown(f"<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
     st.markdown(f"**Where each team started vs. where they ended up** &mdash; {pretty(playbook_stat)}")
-    st.caption("A line sloping up always means improvement, regardless of the stat.")
+    st.caption("A line sloping forward always means improvement, regardless of the stat.")
 
     next_col = f"NEXT_{playbook_stat}_PCTILE"
     level_col = f"{playbook_stat}_PCTILE"
