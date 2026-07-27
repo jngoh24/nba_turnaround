@@ -731,6 +731,25 @@ with tab_whatif:
                 rookie_facts.append(f"**{val_display}** {label}")
             st.caption(" &nbsp;&middot;&nbsp; ".join(rookie_facts))
 
+            # Selected team's own roster snapshot -- same fields shown on the
+            # similar-team cards below, so the two are directly comparable.
+            # Defensive .get()/pd.notna() throughout: degrades gracefully if
+            # a field is missing rather than crashing.
+            own_roster_bits = []
+            if pd.notna(selected_row.get("ROSTER_pct_min_guard")):
+                own_roster_bits.append(
+                    f"{selected_row['ROSTER_pct_min_guard']:.0%} G / "
+                    f"{selected_row['ROSTER_pct_min_forward']:.0%} F / "
+                    f"{selected_row['ROSTER_pct_min_center']:.0%} C"
+                )
+            if pd.notna(selected_row.get("ROSTER_avg_height_in")):
+                h = float(selected_row["ROSTER_avg_height_in"])
+                own_roster_bits.append(f"Avg height {int(h // 12)}'{round(h % 12)}\"")
+            if pd.notna(selected_row.get("ROSTER_avg_age_top5")):
+                own_roster_bits.append(f"Top-5 rotation avg age {float(selected_row['ROSTER_avg_age_top5']):.1f}")
+            if own_roster_bits:
+                st.caption(" &middot; ".join(own_roster_bits))
+
             st.markdown("**Next season's incoming rookies**")
             next_rookie_inputs = {}
 
@@ -886,8 +905,8 @@ with tab_whatif:
                     if pd.notna(srow.get("ROSTER_avg_height_in")):
                         h = float(srow["ROSTER_avg_height_in"])
                         roster_bits.append(f"Avg height {int(h // 12)}'{round(h % 12)}\"")
-                    if pd.notna(srow.get("ROSTER_avg_age")):
-                        roster_bits.append(f"Avg age {float(srow['ROSTER_avg_age']):.1f}")
+                    if pd.notna(srow.get("ROSTER_avg_age_top5")):
+                        roster_bits.append(f"Top-5 rotation avg age {float(srow['ROSTER_avg_age_top5']):.1f}")
                     if roster_bits:
                         st.caption(" &middot; ".join(roster_bits))
 
