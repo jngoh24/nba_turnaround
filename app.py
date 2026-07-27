@@ -556,27 +556,6 @@ with tab_playbook:
     )
     st.plotly_chart(fig_slope, use_container_width=True)
 
-    st.markdown("---")
-    st.subheader("Turnaround stories")
-    st.caption("Every team that went bottom-10 to the playoff bracket. Sortable, filterable.")
-
-    story_cols = ["TEAM_NAME", "season", "WinPCT", "star_added", "NEXT_ROOKIES_on_roster_count",
-                  "NEXT_ROOKIES_max_minutes_per_game", "NEXT_ROOKIES_avg_minutes_per_game"]
-    if "predicted_prob_target_b" in jumped_df.columns:
-        story_cols.append("predicted_prob_target_b")
-    story_display = jumped_df[story_cols].sort_values("season", ascending=False).copy()
-    for c in ["NEXT_ROOKIES_max_minutes_per_game", "NEXT_ROOKIES_avg_minutes_per_game"]:
-        if c in story_display.columns:
-            story_display[c] = story_display[c].round(0)
-    story_display = story_display.rename(columns={
-        "TEAM_NAME": "Team", "season": "Season", "WinPCT": "Win %", "star_added": "Star Added",
-        "NEXT_ROOKIES_on_roster_count": "# Next-Season Rookies",
-        "NEXT_ROOKIES_max_minutes_per_game": "Top Next-Season Rookie Min/Game",
-        "NEXT_ROOKIES_avg_minutes_per_game": "Avg Next-Season Rookie Min/Game",
-        "predicted_prob_target_b": "Predicted Playoff Prob.",
-    })
-    st.dataframe(story_display, use_container_width=True, hide_index=True)
-
 # ---------------------------------------------------------------------------
 # Tab: Team Lookup (demoted -- generic any-team/any-season reference view)
 # ---------------------------------------------------------------------------
