@@ -651,8 +651,11 @@ with tab_whatif:
                     continue
                 lo, hi = float(bounds_row.iloc[0]["p10"]), float(bounds_row.iloc[0]["p90"])
                 lo, hi = min(lo, 0.0), max(hi, 0.0)
+                lo, hi = int(round(lo)), int(round(hi))
+                if lo == hi:
+                    hi = lo + 1  # avoid a zero-width slider if rounding collapses the range
                 label = col.replace("NEXT_ROOKIES_", "").replace("_", " ").title()
-                next_rookie_inputs[col] = st.slider(label, min_value=lo, max_value=hi, value=0.0)
+                next_rookie_inputs[col] = st.slider(label, min_value=lo, max_value=hi, value=0, step=1)
 
             st.markdown("**Component stat changes** (year-over-year)")
             st.caption("For stats where lower is actually better (opponent shooting, turnovers, points allowed), moving the slider left is the improvement direction -- marked below.")
