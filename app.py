@@ -239,7 +239,7 @@ n_jumped_b = int(case_df["NEXT_target_b_made_bracket"].sum())
 jump_rate = n_jumped_b / n_total
 
 st.markdown('<div class="kicker">NBA &middot; 2016-17 TO 2024-25 &middot; BOTTOM-10 TEAM TURNAROUNDS</div>', unsafe_allow_html=True)
-st.title("One Season Turnarounds")
+st.title("From Bottom-10 to the Playoffs")
 st.markdown(
     f'<p style="font-style: italic; color: {TEXT_MUTED};">Bottom-10 teams reach the playoff bracket '
     f'<span class="badge">{jump_rate:.0%}</span> of the time -- here\'s what separates the ones that do.</p>',
@@ -297,16 +297,13 @@ with tab_playbook:
 
     if playbook_season_filter == "All Seasons":
         playbook_case_df = case_df
-        scope_caption = "2016-17 to 2024-25, 90 bottom-10 team-seasons."
     else:
         playbook_case_df = case_df[case_df["season"] == playbook_season_filter]
-        scope_caption = f"{playbook_season_filter} bottom-10 teams only ({len(playbook_case_df)} of 90)."
 
     jumped_df = playbook_case_df[playbook_case_df["NEXT_target_b_made_bracket"] == True].copy()
     stayed_df = playbook_case_df[playbook_case_df["NEXT_target_b_made_bracket"] == False].copy()
 
-    st.subheader(f"{len(jumped_df)} teams turned a bottom-10 season into a playoff appearance the next season")
-    st.caption(scope_caption)
+    st.subheader(f"{len(jumped_df)} teams turned a bottom-10 season into a playoff bracket appearance")
 
     # Excluded from stat-level rankings/charts throughout this tab for three
     # different reasons: NET/OFF/DEF/CLUTCH_NET rating mechanically restate
