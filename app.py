@@ -722,7 +722,7 @@ with tab_whatif:
             st.markdown("**Star addition**")
             star_added_input = st.checkbox("Assume a star-tier player is added this offseason")
 
-            st.markdown("**Rookies already on the roster** (fixed -- known fact about this season, not adjustable)")
+            st.markdown("**Team Composition** (fixed -- known fact about this season, not adjustable)")
             rookie_facts = []
             for col in CURRENT_ROOKIE_FEATURES:
                 label = col.replace("CURRENT_ROOKIES_", "").replace("_", " ").title()
@@ -749,6 +749,22 @@ with tab_whatif:
                 own_roster_bits.append(f"Top-5 rotation avg age {float(selected_row['ROSTER_avg_age_top5']):.1f}")
             if own_roster_bits:
                 st.caption(" &middot; ".join(own_roster_bits))
+
+            # Career stage mix (minutes-weighted): Rookie / Early Career
+            # (1-3 yrs) / Mid Career (4-7 yrs) / Veteran (8+ yrs), with
+            # undrafted players bucketed by age as a fallback proxy.
+            CAREER_STAGE_COLS = [
+                ("Rookie", "ROSTER_pct_min_rookie"),
+                ("Early Career", "ROSTER_pct_min_early_career"),
+                ("Mid Career", "ROSTER_pct_min_mid_career"),
+                ("Veteran", "ROSTER_pct_min_veteran"),
+            ]
+            career_bits = [
+                f"{selected_row[col]:.0%} {label}" for label, col in CAREER_STAGE_COLS
+                if pd.notna(selected_row.get(col))
+            ]
+            if career_bits:
+                st.caption(" / ".join(career_bits))
 
             st.markdown("**Next season's incoming rookies**")
             next_rookie_inputs = {}
@@ -909,6 +925,13 @@ with tab_whatif:
                         roster_bits.append(f"Top-5 rotation avg age {float(srow['ROSTER_avg_age_top5']):.1f}")
                     if roster_bits:
                         st.caption(" &middot; ".join(roster_bits))
+
+                    career_bits = [
+                        f"{srow[col]:.0%} {label}" for label, col in CAREER_STAGE_COLS
+                        if pd.notna(srow.get(col))
+                    ]
+                    if career_bits:
+                        st.caption(" / ".join(career_bits))
 
                     is_selected = st.session_state["whatif_selected_similar"] == sim_label
                     btn_label = "Hide comparison" if is_selected else "View comparison"
