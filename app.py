@@ -809,6 +809,8 @@ with tab_whatif:
             (case_df["TEAM_NAME"] == selected_row["TEAM_NAME"]) & (case_df["season"] == selected_row["season"])
         ]
         selected_height_norm = selected_row_full["ROSTER_height_norm"].iloc[0] if len(selected_row_full) else None
+        selected_row = selected_row.copy()
+        selected_row["ROSTER_height_norm"] = selected_height_norm
 
         extended_features = similarity_features + ROSTER_SIM_COLS + ["ROSTER_height_norm"]
         target_has_roster_data = all(pd.notna(selected_row.get(c)) for c in ROSTER_SIM_COLS) and pd.notna(selected_height_norm)
