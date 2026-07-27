@@ -645,6 +645,7 @@ with tab_whatif:
                         "team's upcoming season has typically already happened by the time "
                         "you're using this tool, so these can be informed guesses, not blind ones)")
             next_rookie_inputs = {}
+            next_rookies_max_slider_val = None  # tracks the max_minutes_per_game slider as we go, to bound avg below
             for col in NEXT_ROOKIE_FEATURES:
                 bounds_row = roster_bounds_df[roster_bounds_df["stat"] == col]
                 if len(bounds_row) == 0:
@@ -654,8 +655,17 @@ with tab_whatif:
                 lo, hi = int(round(lo)), int(round(hi))
                 if lo == hi:
                     hi = lo + 1  # avoid a zero-width slider if rounding collapses the range
+                if col == "NEXT_ROOKIES_avg_minutes_per_game" and next_rookies_max_slider_val is not None:
+                    # Average can never exceed the max mathematically -- without
+                    # this, sliders could construct impossible combinations
+                    # (e.g. avg=20 while max=10) the model has never seen and
+                    # produces unreliable, undefined-behavior output for.
+                    hi = min(hi, next_rookies_max_slider_val)
+                    hi = max(hi, lo)  # keep the slider valid if that pushes hi below lo
                 label = col.replace("NEXT_ROOKIES_", "").replace("_", " ").title()
                 next_rookie_inputs[col] = st.slider(label, min_value=lo, max_value=hi, value=0, step=1)
+                if col == "NEXT_ROOKIES_max_minutes_per_game":
+                    next_rookies_max_slider_val = next_rookie_inputs[col]
 
             st.markdown("**Component stat changes** (year-over-year)")
             st.caption("For stats where lower is actually better (opponent shooting, turnovers, points allowed), moving the slider left is the improvement direction -- marked below.")
