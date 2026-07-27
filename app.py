@@ -305,7 +305,7 @@ with tab_playbook:
     jumped_df = playbook_case_df[playbook_case_df["NEXT_target_b_made_bracket"] == True].copy()
     stayed_df = playbook_case_df[playbook_case_df["NEXT_target_b_made_bracket"] == False].copy()
 
-    st.subheader(f"{len(jumped_df)} teams turned a bottom-10 season into a playoff appearance")
+    st.subheader(f"{len(jumped_df)} teams turned a bottom-10 season into a playoff appearance the next season")
     st.caption(scope_caption)
 
     # Excluded from stat-level rankings/charts throughout this tab for three
