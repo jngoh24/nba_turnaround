@@ -544,15 +544,18 @@ with tab_playbook:
         name="Before", hovertemplate="Before: %{x:.2f}<extra></extra>",
     ))
     fig_slope.add_trace(go.Scatter(
-        x=slope_df["_after"], y=slope_df["_team_label"], mode="markers",
+        x=slope_df["_after"], y=slope_df["_team_label"], mode="markers+text",
         marker=dict(size=9, color=style["primary"]),
+        text=[f"  {v:+.2f}" for v in slope_df["_signed_delta"]],
+        textposition="middle right",
+        textfont=dict(family="JetBrains Mono, monospace", size=11, color=TEXT),
         name="After", hovertemplate="After: %{x:.2f}<extra></extra>",
     ))
     fig_slope.update_layout(
         plot_bgcolor=BG, paper_bgcolor=BG, font_family="Inter", font_color=TEXT,
         height=max(380, 30 * len(slope_df)),
-        margin=dict(l=10, r=20, t=10, b=10),
-        xaxis=dict(gridcolor="#e5e5e2", title="League percentile (0=worst, 1=best)", range=[0, 1]),
+        margin=dict(l=10, r=60, t=10, b=10),
+        xaxis=dict(gridcolor="#e5e5e2", title="League percentile (0=worst, 1=best)", range=[-0.05, 1.28]),
         yaxis=dict(showgrid=False, categoryarray=slope_order, categoryorder="array"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
