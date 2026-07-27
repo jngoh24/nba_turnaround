@@ -290,9 +290,47 @@ with tab_playbook:
     st.subheader(f"{len(jumped_df)} teams turned a bottom-10 season into a playoff bracket appearance")
     st.caption("2016-17 to 2024-25, 90 bottom-10 team-seasons.")
 
-    TAUTOLOGICAL_STATS = {"NET_RATING", "OFF_RATING", "DEF_RATING", "CLUTCH_NET_RATING"}
+    # Excluded from stat-level rankings/charts throughout this tab for three
+    # different reasons: NET/OFF/DEF/CLUTCH_NET rating mechanically restate
+    # the outcome (tautological); PACE has no inherent good/bad direction;
+    # OPP_TOV_PCT (turnovers forced on defense) showed a near-zero/negative
+    # effect in the actual data -- not a genuine positive driver.
+    EXCLUDED_STATS = {"NET_RATING", "OFF_RATING", "DEF_RATING", "CLUTCH_NET_RATING", "PACE", "OPP_TOV_PCT"}
+
+    st.markdown("#### Biggest jumps")
+    higher_is_better_lookup = dict(zip(delta_summary_df["stat"], delta_summary_df["higher_is_better"]))
+    jump_size_col = "DELTA_NET_RATING_PCTILE"
+    jumps_ranked = jumped_df.sort_values(jump_size_col, ascending=False).head(5)
+
+    for _, jrow in jumps_ranked.iterrows():
+        with st.expander(f"**{jrow['TEAM_NAME']}** &middot; {jrow['season']}"):
+            stat_deltas = []
+            for stat in delta_summary_df["stat"]:
+                if stat in EXCLUDED_STATS or stat in DUPLICATE_STATS:
+                    continue
+                col = f"DELTA_{stat}_PCTILE"
+                if col not in jrow.index:
+                    continue
+                hib = bool(higher_is_better_lookup.get(stat, True))
+                signed = jrow[col] if hib else -jrow[col]
+                stat_deltas.append((stat, signed))
+            top_stats = sorted(stat_deltas, key=lambda x: x[1], reverse=True)[:3]
+
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("**Most improved stats**")
+                for stat, signed in top_stats:
+                    st.markdown(f"- {pretty(stat)}: **{signed:+.2f}**")
+            with c2:
+                st.markdown("**Roster moves**")
+                st.markdown(f"- Star added: **{'Yes' if jrow.get('star_added') else 'No'}**")
+                st.markdown(f"- Rookies added: **{int(jrow.get('NEXT_ROOKIES_on_roster_count', 0))}**")
+                if jrow.get("NEXT_ROOKIES_on_roster_count", 0) > 0:
+                    st.markdown(f"- Top rookie min/game: **{jrow.get('NEXT_ROOKIES_max_minutes_per_game', 0):.0f}**")
+
+    st.markdown("---")
     chart_df = delta_summary_df[
-        ~delta_summary_df["stat"].isin(TAUTOLOGICAL_STATS | DUPLICATE_STATS)
+        ~delta_summary_df["stat"].isin(EXCLUDED_STATS | DUPLICATE_STATS)
     ].copy()
     chart_df["label"] = chart_df["stat"].apply(pretty)
     sorted_df = chart_df.sort_values("improvement", ascending=True)
