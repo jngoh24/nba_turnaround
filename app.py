@@ -137,7 +137,7 @@ try:
     model, FEATURE_COLS_TRIMMED = load_model_and_features()
     LEVEL_FEATURES = [c for c in FEATURE_COLS_TRIMMED if c.endswith("_PCTILE") and not c.startswith("DELTA_")]
     DELTA_FEATURES = [c for c in FEATURE_COLS_TRIMMED if c.startswith("DELTA_")]
-    ROOKIE_FEATURES = [c for c in FEATURE_COLS_TRIMMED if c.startswith("ROOKIES_")]
+    ROOKIE_FEATURES = [c for c in FEATURE_COLS_TRIMMED if c.startswith("ROOKIES_") or c.startswith("CURRENT_ROOKIES_")]
     model_load_error = None
 except Exception as e:
     model, FEATURE_COLS_TRIMMED = None, []
@@ -328,14 +328,23 @@ with tab_playbook:
 
     st.markdown("---")
     st.subheader("Which teams actually drove each stat")
-    st.caption(
-        "Pick a stat to see the specific team-seasons behind the aggregate number -- "
-        "who improved it the most, who barely moved it at all (and still made the "
-        "bracket anyway), and where the typical successful team landed."
-    )
 
-    stat_options = chart_df["stat"].tolist()
-    playbook_stat = st.selectbox("Stat", options=stat_options, format_func=pretty, key="playbook_stat")
+    with st.container(border=True):
+        st.markdown(
+            f'<div style="font-size:15px; font-weight:600; margin-bottom:6px;">'
+            f'&#128269; Pick a stat from the chart above to drill into the teams behind it</div>',
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            "See who improved it the most, who barely moved it at all (and "
+            "still made the bracket anyway), and where the typical successful "
+            "team landed."
+        )
+        stat_options = chart_df["stat"].tolist()
+        playbook_stat = st.selectbox(
+            "Stat to explore", options=stat_options, format_func=pretty, key="playbook_stat",
+            label_visibility="collapsed",
+        )
     stat_bound_row = delta_summary_df[delta_summary_df["stat"] == playbook_stat].iloc[0]
     higher_is_better = bool(stat_bound_row["higher_is_better"])
     delta_col = f"DELTA_{playbook_stat}_PCTILE"
@@ -423,13 +432,21 @@ with tab_playbook:
     st.subheader("Turnaround stories")
     st.caption("Every team that went bottom-10 to the playoff bracket. Sortable, filterable.")
 
-    story_cols = ["TEAM_NAME", "season", "WinPCT", "star_added", "ROOKIES_max_minutes"]
+    story_cols = ["TEAM_NAME", "season", "WinPCT", "star_added", "ROOKIES_on_roster_count",
+                  "ROOKIES_max_minutes_per_game", "ROOKIES_avg_minutes_per_game"]
     if "predicted_prob_target_b" in jumped_df.columns:
         story_cols.append("predicted_prob_target_b")
-    st.dataframe(
-        jumped_df[story_cols].sort_values("season", ascending=False),
-        use_container_width=True, hide_index=True,
-    )
+    story_display = jumped_df[story_cols].sort_values("season", ascending=False).copy()
+    for c in ["ROOKIES_max_minutes_per_game", "ROOKIES_avg_minutes_per_game"]:
+        if c in story_display.columns:
+            story_display[c] = story_display[c].round(0)
+    story_display = story_display.rename(columns={
+        "TEAM_NAME": "Team", "season": "Season", "WinPCT": "Win %", "star_added": "Star Added",
+        "ROOKIES_on_roster_count": "# Rookies", "ROOKIES_max_minutes_per_game": "Top Rookie Min/Game",
+        "ROOKIES_avg_minutes_per_game": "Avg Rookie Min/Game",
+        "predicted_prob_target_b": "Predicted Playoff Prob.",
+    })
+    st.dataframe(story_display, use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------------------------
 # Tab: Team Lookup (demoted -- generic any-team/any-season reference view)
@@ -575,14 +592,17 @@ with tab_whatif:
             "mechanically restate the outcome rather than something a front office acts on)."
         )
 
-        def build_input_row(deltas, rookies, star_added_val):
+        def build_input_row(deltas, star_added_val):
             row = {}
             for col in LEVEL_FEATURES:
                 row[col] = selected_row[col]
             for col in DELTA_FEATURES:
                 row[col] = deltas.get(col, 0.0)
             for col in ROOKIE_FEATURES:
-                row[col] = rookies.get(col, 0.0)
+                # Fixed, known fact about the bottom-10 season itself --
+                # not a what-if assumption, so always pulled from the
+                # team's actual data regardless of scenario.
+                row[col] = selected_row.get(col, 0.0)
             if "star_added" in FEATURE_COLS_TRIMMED:
                 row["star_added"] = float(star_added_val)
             if "is_bottom_n" in FEATURE_COLS_TRIMMED:
@@ -591,7 +611,7 @@ with tab_whatif:
                 row["WinPCT"] = selected_row["WinPCT"]
             return pd.DataFrame([row])[FEATURE_COLS_TRIMMED]
 
-        baseline_row = build_input_row({}, {}, False)
+        baseline_row = build_input_row({}, False)
         baseline_prob = model.predict_proba(baseline_row)[0, 1]
 
         col_sliders, col_result = st.columns([2, 1])
@@ -600,17 +620,14 @@ with tab_whatif:
             st.markdown("**Star addition**")
             star_added_input = st.checkbox("Assume a star-tier player is added this offseason")
 
-            st.markdown("**Rookie contribution**")
-            rookie_inputs = {}
+            st.markdown("**Rookies already on the roster** (fixed -- known fact about this season, not adjustable)")
+            rookie_facts = []
             for col in ROOKIE_FEATURES:
-                bounds_row = roster_bounds_df[roster_bounds_df["stat"] == col]
-                if len(bounds_row) == 0:
-                    continue
-                lo, hi = float(bounds_row.iloc[0]["p10"]), float(bounds_row.iloc[0]["p90"])
-                lo, hi = min(lo, 0.0), max(hi, 0.0)
-                rookie_inputs[col] = st.slider(
-                    col.replace("ROOKIES_", "").replace("_", " ").title(), min_value=lo, max_value=hi, value=0.0,
-                )
+                label = col.replace("CURRENT_ROOKIES_", "").replace("_", " ").title()
+                val = selected_row.get(col, 0)
+                val_display = f"{val:.0f}" if pd.notna(val) else "N/A"
+                rookie_facts.append(f"**{val_display}** {label}")
+            st.caption(" &nbsp;&middot;&nbsp; ".join(rookie_facts))
 
             st.markdown("**Component stat changes** (year-over-year)")
             st.caption("For stats where lower is actually better (opponent shooting, turnovers, points allowed), moving the slider left is the improvement direction -- marked below.")
@@ -627,7 +644,7 @@ with tab_whatif:
                 label = pretty(stat_name) if higher_is_better else f"{pretty(stat_name)} (lower = better)"
                 delta_inputs[col] = st.slider(label, min_value=lo, max_value=hi, value=0.0)
 
-        scenario_row = build_input_row(delta_inputs, rookie_inputs, star_added_input)
+        scenario_row = build_input_row(delta_inputs, star_added_input)
         scenario_prob = model.predict_proba(scenario_row)[0, 1]
 
         with col_result:
@@ -708,12 +725,22 @@ with tab_explorer:
     display_cols = [
         "TEAM_NAME", "season", "WinPCT",
         "NEXT_target_a_top10_conf", "NEXT_target_b_made_bracket",
-        "star_added", "ROOKIES_max_minutes",
+        "star_added", "ROOKIES_on_roster_count",
+        "ROOKIES_max_minutes_per_game", "ROOKIES_avg_minutes_per_game",
     ]
     if "predicted_prob_target_b" in filtered_df.columns:
         display_cols.append("predicted_prob_target_b")
 
-    st.dataframe(
-        filtered_df[display_cols].sort_values("season", ascending=False),
-        use_container_width=True, hide_index=True,
-    )
+    explorer_display = filtered_df[display_cols].sort_values("season", ascending=False).copy()
+    for c in ["ROOKIES_max_minutes_per_game", "ROOKIES_avg_minutes_per_game"]:
+        if c in explorer_display.columns:
+            explorer_display[c] = explorer_display[c].round(0)
+    explorer_display = explorer_display.rename(columns={
+        "TEAM_NAME": "Team", "season": "Season", "WinPCT": "Win %",
+        "NEXT_target_a_top10_conf": "Reached Top-10", "NEXT_target_b_made_bracket": "Reached Bracket",
+        "star_added": "Star Added", "ROOKIES_on_roster_count": "# Rookies",
+        "ROOKIES_max_minutes_per_game": "Top Rookie Min/Game",
+        "ROOKIES_avg_minutes_per_game": "Avg Rookie Min/Game",
+        "predicted_prob_target_b": "Predicted Playoff Prob.",
+    })
+    st.dataframe(explorer_display, use_container_width=True, hide_index=True)
