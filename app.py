@@ -239,7 +239,7 @@ n_jumped_b = int(case_df["NEXT_target_b_made_bracket"].sum())
 jump_rate = n_jumped_b / n_total
 
 st.markdown('<div class="kicker">NBA &middot; 2016-17 TO 2024-25 &middot; BOTTOM-10 TEAM TURNAROUNDS</div>', unsafe_allow_html=True)
-st.title("One Season Turnarounds")
+st.title("From Bottom-10 to the Playoffs")
 st.markdown(
     f'<p style="font-style: italic; color: {TEXT_MUTED};">Bottom-10 teams reach the playoff bracket '
     f'<span class="badge">{jump_rate:.0%}</span> of the time -- here\'s what separates the ones that do.</p>',
@@ -303,7 +303,7 @@ with tab_playbook:
     jumped_df = playbook_case_df[playbook_case_df["NEXT_target_b_made_bracket"] == True].copy()
     stayed_df = playbook_case_df[playbook_case_df["NEXT_target_b_made_bracket"] == False].copy()
 
-    st.subheader(f"{len(jumped_df)} teams turned a bottom-10 season into a playoff bracket appearance the next season")
+    st.subheader(f"{len(jumped_df)} teams turned a bottom-10 season into a playoff bracket appearance")
 
     # Excluded from stat-level rankings/charts throughout this tab for three
     # different reasons: NET/OFF/DEF/CLUTCH_NET rating mechanically restate
@@ -720,9 +720,14 @@ with tab_whatif:
             star_added_input = st.checkbox("Assume a star-tier player is added this offseason")
 
             st.markdown("**Team Composition** (fixed -- known fact about this season, not adjustable)")
+            ROOKIE_FACT_LABELS = {
+                "CURRENT_ROOKIES_on_roster_count": "Rookies on Roster",
+                "CURRENT_ROOKIES_max_minutes_per_game": "Rookie Max Min/Game",
+                "CURRENT_ROOKIES_avg_minutes_per_game": "Rookie Avg Min/Game",
+            }
             rookie_facts = []
             for col in CURRENT_ROOKIE_FEATURES:
-                label = col.replace("CURRENT_ROOKIES_", "").replace("_", " ").title()
+                label = ROOKIE_FACT_LABELS.get(col, col.replace("CURRENT_ROOKIES_", "").replace("_", " ").title())
                 val = selected_row.get(col, 0)
                 val_display = f"{val:.0f}" if pd.notna(val) else "N/A"
                 rookie_facts.append(f"**{val_display}** {label}")
