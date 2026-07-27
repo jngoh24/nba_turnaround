@@ -153,22 +153,26 @@ except Exception as e:
 # Sidebar -- team selector, logo, headline metric, methodology note
 # ---------------------------------------------------------------------------
 
-team_options = sorted(full_df["TEAM_NAME"].unique())
+# Restricted to bottom-10 cases only -- this dashboard is specifically about
+# bottom-10 turnarounds, not a generic any-team browser.
+bottom10_full_df = full_df[full_df["is_bottom_n"] == True].copy()
+team_options = sorted(bottom10_full_df["TEAM_NAME"].unique())
 
 with st.sidebar:
     st.markdown("**NBA TURNAROUND MODEL**")
     st.caption("2016-17 to 2024-25 -- bottom-10 team turnarounds")
     st.markdown("---")
 
+    st.markdown("**Team & season** (What-If, Team Lookup)")
     selected_team = st.selectbox("Team", options=team_options)
 
     season_options = sorted(
-        full_df[full_df["TEAM_NAME"] == selected_team]["season"].unique(), reverse=True
+        bottom10_full_df[bottom10_full_df["TEAM_NAME"] == selected_team]["season"].unique(), reverse=True
     )
     selected_season = st.selectbox("Season", options=season_options)
 
-    selected_row = full_df[
-        (full_df["TEAM_NAME"] == selected_team) & (full_df["season"] == selected_season)
+    selected_row = bottom10_full_df[
+        (bottom10_full_df["TEAM_NAME"] == selected_team) & (bottom10_full_df["season"] == selected_season)
     ].iloc[0]
     team_name = selected_row["TEAM_NAME"]
     style = TEAM_STYLE.get(team_name, DEFAULT_STYLE)
@@ -194,6 +198,11 @@ with st.sidebar:
         f"</div>",
         unsafe_allow_html=True,
     )
+
+    st.markdown("---")
+    st.markdown("**Season** (Turnaround Playbook)")
+    playbook_season_options = ["All Seasons"] + sorted(bottom10_full_df["season"].unique(), reverse=True)
+    playbook_season_filter = st.selectbox("Season filter", options=playbook_season_options, label_visibility="collapsed")
 
     st.markdown("---")
     st.caption(
@@ -284,11 +293,18 @@ tab_playbook, tab_whatif, tab_diagnostic, tab_explorer = st.tabs(
 # ---------------------------------------------------------------------------
 
 with tab_playbook:
-    jumped_df = case_df[case_df["NEXT_target_b_made_bracket"] == True].copy()
-    stayed_df = case_df[case_df["NEXT_target_b_made_bracket"] == False].copy()
+    if playbook_season_filter == "All Seasons":
+        playbook_case_df = case_df
+        scope_caption = "2016-17 to 2024-25, 90 bottom-10 team-seasons."
+    else:
+        playbook_case_df = case_df[case_df["season"] == playbook_season_filter]
+        scope_caption = f"{playbook_season_filter} bottom-10 teams only ({len(playbook_case_df)} of 90)."
+
+    jumped_df = playbook_case_df[playbook_case_df["NEXT_target_b_made_bracket"] == True].copy()
+    stayed_df = playbook_case_df[playbook_case_df["NEXT_target_b_made_bracket"] == False].copy()
 
     st.subheader(f"{len(jumped_df)} teams turned a bottom-10 season into a playoff bracket appearance")
-    st.caption("2016-17 to 2024-25, 90 bottom-10 team-seasons.")
+    st.caption(scope_caption)
 
     # Excluded from stat-level rankings/charts throughout this tab for three
     # different reasons: NET/OFF/DEF/CLUTCH_NET rating mechanically restate
@@ -385,9 +401,31 @@ with tab_playbook:
                     )
 
     st.markdown("---")
-    chart_df = delta_summary_df[
-        ~delta_summary_df["stat"].isin(EXCLUDED_STATS | DUPLICATE_STATS)
-    ].copy()
+    if playbook_season_filter == "All Seasons":
+        chart_df = delta_summary_df[
+            ~delta_summary_df["stat"].isin(EXCLUDED_STATS | DUPLICATE_STATS)
+        ].copy()
+    else:
+        # Recompute the same jumped-vs-stayed separation math live, on just
+        # this season's subset -- the precomputed CSV is fixed across all
+        # 90 cases and can't respond to the season filter on its own.
+        recompute_rows = []
+        for _, brow in delta_summary_df.iterrows():
+            stat = brow["stat"]
+            if stat in EXCLUDED_STATS or stat in DUPLICATE_STATS:
+                continue
+            col = f"DELTA_{stat}_PCTILE"
+            if col not in playbook_case_df.columns:
+                continue
+            hib = bool(brow["higher_is_better"]) if pd.notna(brow["higher_is_better"]) else True
+            med_j = jumped_df[col].median() if len(jumped_df) > 0 else float("nan")
+            med_s = stayed_df[col].median() if len(stayed_df) > 0 else float("nan")
+            raw_sep = med_j - med_s
+            recompute_rows.append({
+                "stat": stat, "higher_is_better": brow["higher_is_better"],
+                "improvement": raw_sep if hib else -raw_sep,
+            })
+        chart_df = pd.DataFrame(recompute_rows)
     chart_df["label"] = chart_df["stat"].apply(pretty)
     sorted_df = chart_df.sort_values("improvement", ascending=True)
 
