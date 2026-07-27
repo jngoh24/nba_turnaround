@@ -288,11 +288,7 @@ with tab_playbook:
     stayed_df = case_df[case_df["NEXT_target_b_made_bracket"] == False].copy()
 
     st.subheader(f"{len(jumped_df)} teams turned a bottom-10 season into a playoff bracket appearance")
-    st.caption(
-        "Out of 90 bottom-10 team-seasons (2016-17 to 2024-25). Everything "
-        "below is built from these teams specifically -- not a generic "
-        "league-wide stat browser."
-    )
+    st.caption("2016-17 to 2024-25, 90 bottom-10 team-seasons.")
 
     TAUTOLOGICAL_STATS = {"NET_RATING", "OFF_RATING", "DEF_RATING", "CLUTCH_NET_RATING"}
     chart_df = delta_summary_df[
@@ -324,12 +320,7 @@ with tab_playbook:
         margin=dict(l=10, r=50, t=10, b=10), showlegend=False, bargap=0.35,
     )
     st.plotly_chart(fig_playbook, use_container_width=True)
-    st.caption(
-        "Pace of Play excluded (no inherent good direction). Net/Offensive/"
-        "Defensive/Clutch Rating excluded -- they mechanically restate the "
-        "outcome (better record = better rating) rather than explain what "
-        "drove it."
-    )
+    st.caption("Pace and rating-based stats excluded -- rating changes mechanically restate the outcome rather than explain it.")
 
     st.markdown("---")
     st.subheader("Which teams actually drove each stat")
@@ -339,11 +330,6 @@ with tab_playbook:
             f'<div style="font-size:15px; font-weight:600; margin-bottom:6px;">'
             f'&#128269; Pick a stat from the chart above to drill into the teams behind it</div>',
             unsafe_allow_html=True,
-        )
-        st.caption(
-            "See who improved it the most, who barely moved it at all (and "
-            "still made the bracket anyway), and where the typical successful "
-            "team landed."
         )
         stat_options = chart_df["stat"].tolist()
         playbook_stat = st.selectbox(
@@ -383,14 +369,7 @@ with tab_playbook:
 
     st.markdown(f"<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
     st.markdown(f"**Where each team started vs. where they ended up** &mdash; {pretty(playbook_stat)}")
-    st.caption(
-        "League percentile before (hollow) and after (filled) the turnaround "
-        "season, one line per team, sorted by improvement. Both ends already "
-        "account for direction, so a line sloping UP always means genuine "
-        "improvement, regardless of the underlying stat. Biggest/average/"
-        "smallest jump above are always computed across all teams, "
-        "regardless of how many are shown in the chart below."
-    )
+    st.caption("A line sloping up always means improvement, regardless of the stat.")
 
     next_col = f"NEXT_{playbook_stat}_PCTILE"
     level_col = f"{playbook_stat}_PCTILE"
@@ -461,13 +440,7 @@ with tab_playbook:
 with tab_diagnostic:
     st.markdown(f'<div class="kicker">{team_name.upper()} &middot; {selected_row["season"]}</div>', unsafe_allow_html=True)
     st.subheader("League percentile profile")
-    st.caption(
-        "0 = worst in the league that season, 1 = best -- sign-corrected so "
-        "this is always true (e.g. a low turnover rate shows as a HIGH bar "
-        "here, since fewer turnovers is the good outcome, even though the "
-        "raw stat's percentile runs the other way). Dashed line = league "
-        "median. PACE has no inherent good/bad direction, shown unadjusted."
-    )
+    st.caption("0 = worst in the league, 1 = best. Dashed line = league median.")
 
     diag_rows = []
     for col in LEVEL_FEATURES:
@@ -517,12 +490,7 @@ with tab_diagnostic:
 
     st.markdown("---")
     st.subheader("Gap to a typical playoff team")
-    st.caption(
-        "Current percentile vs. the average ACTUAL playoff team over the last 3 seasons "
-        "(2022-23 through 2024-25). Green = realistically closeable in one season "
-        "(within the biggest single-season swing any bottom-10 team has actually made "
-        "on that stat); red = beyond that historical ceiling."
-    )
+    st.caption("Green = realistically closeable in one season. Red = beyond any historical single-season swing.")
 
     gap_rows = []
     for _, brow in benchmark_df.iterrows():
@@ -590,13 +558,7 @@ with tab_whatif:
     else:
         st.markdown(f'<div class="kicker">{team_name.upper()} &middot; {selected_row["season"]}</div>', unsafe_allow_html=True)
         st.subheader("Scenario builder")
-        st.caption(
-            "Baseline assumes no further improvement (all sliders at zero). Every slider "
-            "is bounded by the actual 10th-90th percentile of year-over-year change seen "
-            "across 90 bottom-10 team-seasons -- no impossible improvements. Uses the "
-            "tautology-free model (excludes NET/OFF/DEF/CLUTCH_NET rating deltas, which "
-            "mechanically restate the outcome rather than something a front office acts on)."
-        )
+        st.caption("Baseline assumes no change. Sliders are bounded by real historical ranges -- no impossible improvements.")
 
         def build_input_row(deltas, next_rookies, star_added_val):
             row = {}
@@ -641,9 +603,7 @@ with tab_whatif:
                 rookie_facts.append(f"**{val_display}** {label}")
             st.caption(" &nbsp;&middot;&nbsp; ".join(rookie_facts))
 
-            st.markdown("**Next season's incoming rookies** (assumption -- the draft for this "
-                        "team's upcoming season has typically already happened by the time "
-                        "you're using this tool, so these can be informed guesses, not blind ones)")
+            st.markdown("**Next season's incoming rookies**")
             next_rookie_inputs = {}
 
             count_bounds = roster_bounds_df[roster_bounds_df["stat"] == "NEXT_ROOKIES_on_roster_count"]
@@ -691,21 +651,23 @@ with tab_whatif:
                     )
 
             st.markdown("**Component stat changes** (year-over-year)")
-            st.caption(
-                "Positive always means moving toward being the BEST in the "
-                "league on that stat (percentile 1.0); negative always means "
-                "moving toward WORST (percentile 0) -- true for every slider "
-                "here, regardless of whether the underlying raw stat is "
-                "better lower or higher."
-            )
-            delta_inputs = {}
+            st.caption("Positive = toward best in the league (1.0). Negative = toward worst (0). True for every slider.")
+
+            TOP_N_WHATIF_STATS = 6
+            candidate_stats = []
             for col in DELTA_FEATURES:
                 stat_name = col.replace("DELTA_", "").replace("_PCTILE", "")
-                if stat_name in DUPLICATE_STATS:
-                    continue
+                if stat_name in DUPLICATE_STATS or stat_name == "PACE":
+                    continue  # PACE has no inherent good/bad direction -- not a meaningful slider
                 bounds_row = delta_summary_df[delta_summary_df["stat"] == stat_name]
                 if len(bounds_row) == 0:
                     continue
+                candidate_stats.append((col, stat_name, abs(float(bounds_row.iloc[0]["improvement"]))))
+            top_stats = sorted(candidate_stats, key=lambda x: x[2], reverse=True)[:TOP_N_WHATIF_STATS]
+
+            delta_inputs = {}
+            for col, stat_name, _ in top_stats:
+                bounds_row = delta_summary_df[delta_summary_df["stat"] == stat_name]
                 raw_lo, raw_hi = float(bounds_row.iloc[0]["p10"]), float(bounds_row.iloc[0]["p90"])
                 higher_is_better = bool(bounds_row.iloc[0]["higher_is_better"])
                 if higher_is_better:
@@ -743,7 +705,7 @@ with tab_whatif:
 
     st.markdown("---")
     st.subheader(f"Realistic range for {playbook_stat}")
-    st.caption("Actual 10th-90th percentile of year-over-year change across all 90 bottom-10 team-seasons (not just the ones that reached the bracket).")
+    st.caption("10th-90th percentile of year-over-year change, all 90 bottom-10 team-seasons.")
 
     fig2 = go.Figure()
     fig2.add_trace(go.Scatter(
