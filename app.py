@@ -716,111 +716,81 @@ with tab_whatif:
         baseline_row = build_input_row({}, {}, False)
         baseline_prob = model.predict_proba(baseline_row)[0, 1]
 
-        st.markdown("**Star addition**")
-        star_added_input = st.checkbox("Assume a star-tier player is added this offseason")
+        col_sliders, col_result = st.columns([2, 1])
 
-        st.markdown("**Rookies already on the roster** (fixed -- known fact about this season, not adjustable)")
-        rookie_facts = []
-        for col in CURRENT_ROOKIE_FEATURES:
-            label = col.replace("CURRENT_ROOKIES_", "").replace("_", " ").title()
-            val = selected_row.get(col, 0)
-            val_display = f"{val:.0f}" if pd.notna(val) else "N/A"
-            rookie_facts.append(f"**{val_display}** {label}")
-        st.caption(" &nbsp;&middot;&nbsp; ".join(rookie_facts))
+        with col_sliders:
+            st.markdown("**Star addition**")
+            star_added_input = st.checkbox("Assume a star-tier player is added this offseason")
 
-        st.markdown("**Next season's incoming rookies**")
-        next_rookie_inputs = {}
+            st.markdown("**Rookies already on the roster** (fixed -- known fact about this season, not adjustable)")
+            rookie_facts = []
+            for col in CURRENT_ROOKIE_FEATURES:
+                label = col.replace("CURRENT_ROOKIES_", "").replace("_", " ").title()
+                val = selected_row.get(col, 0)
+                val_display = f"{val:.0f}" if pd.notna(val) else "N/A"
+                rookie_facts.append(f"**{val_display}** {label}")
+            st.caption(" &nbsp;&middot;&nbsp; ".join(rookie_facts))
 
-        count_bounds = roster_bounds_df[roster_bounds_df["stat"] == "NEXT_ROOKIES_on_roster_count"]
-        count_lo, count_hi = 0, 5
-        if len(count_bounds) > 0:
-            count_lo = max(0, int(round(float(count_bounds.iloc[0]["min"]))))
-            count_hi = max(count_lo + 1, int(round(float(count_bounds.iloc[0]["max"]))))
-        rookie_count = st.slider("On Roster Count", min_value=count_lo, max_value=count_hi, value=0, step=1)
-        next_rookie_inputs["NEXT_ROOKIES_on_roster_count"] = rookie_count
+            st.markdown("**Next season's incoming rookies**")
+            next_rookie_inputs = {}
 
-        max_bounds = roster_bounds_df[roster_bounds_df["stat"] == "NEXT_ROOKIES_max_minutes_per_game"]
-        avg_bounds = roster_bounds_df[roster_bounds_df["stat"] == "NEXT_ROOKIES_avg_minutes_per_game"]
+            count_bounds = roster_bounds_df[roster_bounds_df["stat"] == "NEXT_ROOKIES_on_roster_count"]
+            count_lo, count_hi = 0, 5
+            if len(count_bounds) > 0:
+                count_lo = max(0, int(round(float(count_bounds.iloc[0]["min"]))))
+                count_hi = max(count_lo + 1, int(round(float(count_bounds.iloc[0]["max"]))))
+            rookie_count = st.slider("On Roster Count", min_value=count_lo, max_value=count_hi, value=0, step=1)
+            next_rookie_inputs["NEXT_ROOKIES_on_roster_count"] = rookie_count
 
-        if rookie_count == 0:
-            # No rookies -- max/avg minutes are meaningless, don't show
-            # sliders for them at all.
-            next_rookie_inputs["NEXT_ROOKIES_max_minutes_per_game"] = 0
-            next_rookie_inputs["NEXT_ROOKIES_avg_minutes_per_game"] = 0
-            st.caption("No rookies -- minutes sliders not applicable.")
-        elif len(max_bounds) > 0:
-            m_lo, m_hi = float(max_bounds.iloc[0]["min"]), float(max_bounds.iloc[0]["max"])
-            m_lo, m_hi = int(round(min(m_lo, 0.0))), int(round(max(m_hi, 0.0)))
-            if m_lo == m_hi:
-                m_hi = m_lo + 1
-            max_val = st.slider("Max Minutes Per Game", min_value=m_lo, max_value=m_hi, value=0, step=1)
-            next_rookie_inputs["NEXT_ROOKIES_max_minutes_per_game"] = max_val
+            max_bounds = roster_bounds_df[roster_bounds_df["stat"] == "NEXT_ROOKIES_max_minutes_per_game"]
 
-            # Avg Minutes Per Game slider removed -- diagnosed as
-            # producing unreliable, non-monotonic model output at
-            # higher values (a sharp probability cliff around 12-13
-            # min/game, not a smooth realistic decline -- likely the
-            # model overfitting on very few training rows in that
-            # region, given only 90 total cases). Defaulting avg=max
-            # for every rookie count (assume incoming rookies split
-            # time evenly at the max level) instead of exposing it as
-            # a separate control.
-            next_rookie_inputs["NEXT_ROOKIES_avg_minutes_per_game"] = max_val
-            if rookie_count == 1:
-                st.caption(f"1 rookie on roster -- avg minutes/game equals max minutes/game ({max_val}), by definition.")
+            if rookie_count == 0:
+                next_rookie_inputs["NEXT_ROOKIES_max_minutes_per_game"] = 0
+                next_rookie_inputs["NEXT_ROOKIES_avg_minutes_per_game"] = 0
+                st.caption("No rookies -- minutes sliders not applicable.")
+            elif len(max_bounds) > 0:
+                m_lo, m_hi = float(max_bounds.iloc[0]["min"]), float(max_bounds.iloc[0]["max"])
+                m_lo, m_hi = int(round(min(m_lo, 0.0))), int(round(max(m_hi, 0.0)))
+                if m_lo == m_hi:
+                    m_hi = m_lo + 1
+                max_val = st.slider("Max Minutes Per Game", min_value=m_lo, max_value=m_hi, value=0, step=1)
+                next_rookie_inputs["NEXT_ROOKIES_max_minutes_per_game"] = max_val
+                # Avg Minutes Per Game slider removed -- unreliable model
+                # output above ~12-13 min/game. Defaulting avg=max.
+                next_rookie_inputs["NEXT_ROOKIES_avg_minutes_per_game"] = max_val
+                if rookie_count == 1:
+                    st.caption(f"1 rookie on roster -- avg minutes/game equals max minutes/game ({max_val}), by definition.")
 
-        # Result placeholder -- positioned here (after rookie inputs, before
-        # component stat sliders) so it sits roughly mid-page rather than
-        # pinned at the very top. Filled in further down the script, AFTER
-        # every slider has been read (Streamlit requires that), but renders
-        # at THIS position in the page regardless of when it's filled.
-        st.markdown("---")
-        result_placeholder = st.empty()
-        st.markdown("---")
+            st.markdown("**Component stat changes** (year-over-year)")
+            st.caption("Positive = toward best in the league (1.0). Negative = toward worst (0).")
 
-        st.markdown("**Component stat changes** (year-over-year)")
-        st.caption("Positive = toward best in the league (1.0). Negative = toward worst (0). True for every slider.")
+            TOP_N_WHATIF_STATS = 6
+            candidate_stats = []
+            for col in DELTA_FEATURES:
+                stat_name = col.replace("DELTA_", "").replace("_PCTILE", "")
+                if stat_name in DUPLICATE_STATS or stat_name == "PACE":
+                    continue
+                bounds_row = delta_summary_df[delta_summary_df["stat"] == stat_name]
+                if len(bounds_row) == 0:
+                    continue
+                candidate_stats.append((col, stat_name, abs(float(bounds_row.iloc[0]["improvement"]))))
+            top_stats = sorted(candidate_stats, key=lambda x: x[2], reverse=True)[:TOP_N_WHATIF_STATS]
 
-        TOP_N_WHATIF_STATS = 6
-        candidate_stats = []
-        for col in DELTA_FEATURES:
-            stat_name = col.replace("DELTA_", "").replace("_PCTILE", "")
-            if stat_name in DUPLICATE_STATS or stat_name == "PACE":
-                continue  # PACE has no inherent good/bad direction -- not a meaningful slider
-            bounds_row = delta_summary_df[delta_summary_df["stat"] == stat_name]
-            if len(bounds_row) == 0:
-                continue
-            candidate_stats.append((col, stat_name, abs(float(bounds_row.iloc[0]["improvement"]))))
-        top_stats = sorted(candidate_stats, key=lambda x: x[2], reverse=True)[:TOP_N_WHATIF_STATS]
-
-        delta_inputs = {}
-        for col, stat_name, _ in top_stats:
-            bounds_row = delta_summary_df[delta_summary_df["stat"] == stat_name]
-            raw_lo, raw_hi = float(bounds_row.iloc[0]["p10"]), float(bounds_row.iloc[0]["p90"])
-            higher_is_better = bool(bounds_row.iloc[0]["higher_is_better"])
-            if higher_is_better:
-                # Raw percentile delta already means "higher = better" --
-                # display as-is.
-                display_lo, display_hi = raw_lo, raw_hi
-            else:
-                # Raw percentile delta means "higher = worse" for these
-                # stats (e.g. OPP_EFG_PCT_PCTILE: ranking high = allowing
-                # good opponent shooting = bad defense). Flip the display
-                # so positive/right ALWAYS means improvement here too --
-                # negate back to the raw value below before it reaches
-                # the model, which still needs the true, unflipped delta.
-                display_lo, display_hi = -raw_hi, -raw_lo
-            display_val = st.slider(pretty(stat_name), min_value=display_lo, max_value=display_hi, value=0.0)
-            delta_inputs[col] = display_val if higher_is_better else -display_val
+            delta_inputs = {}
+            for col, stat_name, _ in top_stats:
+                bounds_row = delta_summary_df[delta_summary_df["stat"] == stat_name]
+                raw_lo, raw_hi = float(bounds_row.iloc[0]["p10"]), float(bounds_row.iloc[0]["p90"])
+                higher_is_better = bool(bounds_row.iloc[0]["higher_is_better"])
+                if higher_is_better:
+                    display_lo, display_hi = raw_lo, raw_hi
+                else:
+                    display_lo, display_hi = -raw_hi, -raw_lo
+                display_val = st.slider(pretty(stat_name), min_value=display_lo, max_value=display_hi, value=0.0)
+                delta_inputs[col] = display_val if higher_is_better else -display_val
 
         scenario_row = build_input_row(delta_inputs, next_rookie_inputs, star_added_input)
         scenario_prob = model.predict_proba(scenario_row)[0, 1]
 
-        # Lookalike matching -- k-NN on CURRENT-season percentile stats only
-        # (LEVEL_FEATURES), NOT star_added/rookies/deltas -- those are the
-        # answer we're trying to find, not the input to match on. Compared
-        # against a fresh, always-all-25 pool (not the Playbook tab's
-        # jumped_df, which can be season-filtered for an unrelated purpose).
         similarity_pool_df = case_df[case_df["NEXT_target_b_made_bracket"] == True].copy()
         similarity_features = [c for c in LEVEL_FEATURES if c.replace("_PCTILE", "") not in DUPLICATE_STATS]
 
@@ -829,7 +799,7 @@ with tab_whatif:
             matches = []
             for _, prow in pool_df.iterrows():
                 if prow["TEAM_NAME"] == target_row["TEAM_NAME"] and prow["season"] == target_row["season"]:
-                    continue  # don't match a team against itself
+                    continue
                 cand_vec = prow[features].astype(float)
                 dist = float(((target_vec - cand_vec) ** 2).sum() ** 0.5)
                 matches.append((dist, prow))
@@ -838,41 +808,36 @@ with tab_whatif:
 
         similar_matches = compute_similar_teams(selected_row, similarity_pool_df, similarity_features, n=3)
 
-        with result_placeholder.container():
-            rc1, rc2 = st.columns(2)
-            rc1.markdown(
+        with col_result:
+            st.markdown(
                 f'<div class="kpi-label">Playoff bracket probability</div>'
-                f'<div class="kpi-value" style="font-size:48px;">{scenario_prob:.0%}</div>'
+                f'<div class="kpi-value" style="font-size:40px;">{scenario_prob:.0%}</div>'
                 f'<div style="color:{COLOR_JUMPED if scenario_prob >= baseline_prob else COLOR_STAYED}; font-weight:600;">'
-                f'{(scenario_prob - baseline_prob):+.0%} vs. no change</div>',
-                unsafe_allow_html=True,
-            )
-            rc2.markdown(
-                f'<div class="kpi-label">Baseline (no improvement)</div>'
-                f'<div style="font-size:24px; font-family:JetBrains Mono, monospace;">{baseline_prob:.0%}</div>',
+                f'{(scenario_prob - baseline_prob):+.0%} vs. no change</div>'
+                f'<div class="kpi-label" style="margin-top:12px;">Baseline</div>'
+                f'<div style="font-size:18px; font-family:JetBrains Mono, monospace;">{baseline_prob:.0%}</div>',
                 unsafe_allow_html=True,
             )
 
-            st.markdown('<div class="kpi-label" style="margin-top:16px;">Most similar successful turnarounds</div>', unsafe_allow_html=True)
-            st.caption("Based on this team's current-season stat profile -- not rookies, star additions, or improvements, which are the outcomes we're trying to find precedent for.")
+            st.markdown('<div class="kpi-label" style="margin-top:16px;">Most similar turnarounds</div>', unsafe_allow_html=True)
+            st.caption("Based on current-season stat profile.")
             if not similar_matches:
                 st.caption("No comparable teams found.")
             else:
-                sim_cols = st.columns(len(similar_matches))
-                for scol, (dist, srow) in zip(sim_cols, similar_matches):
+                for dist, srow in similar_matches:
                     sim_style = TEAM_STYLE.get(srow["TEAM_NAME"], DEFAULT_STYLE)
-                    with scol:
-                        if sim_style["slug"]:
-                            st.image(f"https://i.logocdn.com/nba/current/{sim_style['slug']}.svg", width=36)
-                        st.markdown(
-                            f'<div style="font-size:13px; font-weight:600; color:{sim_style["primary"]};">{srow["TEAM_NAME"]}</div>'
-                            f'<div class="kicker">{srow["season"]}</div>',
-                            unsafe_allow_html=True,
-                        )
-                        st.caption(
-                            f"Star added: {'Yes' if srow.get('star_added') else 'No'} &middot; "
-                            f"Rookies: {int(srow.get('NEXT_ROOKIES_on_roster_count', 0))}"
-                        )
+                    if sim_style["slug"]:
+                        st.image(f"https://i.logocdn.com/nba/current/{sim_style['slug']}.svg", width=32)
+                    st.markdown(
+                        f'<div style="font-size:13px; font-weight:600; color:{sim_style["primary"]};">{srow["TEAM_NAME"]}</div>'
+                        f'<div class="kicker">{srow["season"]}</div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(
+                        f"Star added: {'Yes' if srow.get('star_added') else 'No'} &middot; "
+                        f"Rookies: {int(srow.get('NEXT_ROOKIES_on_roster_count', 0))}"
+                    )
+                    st.markdown("---")
 
 # ---------------------------------------------------------------------------
 # Tab 4: Case Explorer
