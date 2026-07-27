@@ -200,11 +200,6 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.markdown("**Season** (Turnaround Playbook)")
-    playbook_season_options = ["All Seasons"] + sorted(bottom10_full_df["season"].unique(), reverse=True)
-    playbook_season_filter = st.selectbox("Season filter", options=playbook_season_options, label_visibility="collapsed")
-
-    st.markdown("---")
     st.caption(
         "**Bottom-10** = league-wide bottom 10 teams by win %. "
         "**Reached the bracket** = actually appeared in a playoff series "
@@ -293,6 +288,13 @@ tab_playbook, tab_whatif, tab_diagnostic, tab_explorer = st.tabs(
 # ---------------------------------------------------------------------------
 
 with tab_playbook:
+    # Excludes 2025-26 -- that season hasn't finished, so there's no
+    # NEXT-season outcome data (playoff bracket result) to show yet.
+    playbook_season_options = ["All Seasons"] + sorted(
+        [s for s in case_df["season"].unique() if s != "2025-26"], reverse=True
+    )
+    playbook_season_filter = st.selectbox("Filter by season", options=playbook_season_options)
+
     if playbook_season_filter == "All Seasons":
         playbook_case_df = case_df
         scope_caption = "2016-17 to 2024-25, 90 bottom-10 team-seasons."
@@ -475,9 +477,13 @@ with tab_playbook:
     jumped_df["_signed_delta"] = jumped_df[delta_col] if higher_is_better else -jumped_df[delta_col]
     jumped_sorted = jumped_df.sort_values("_signed_delta", ascending=False)
 
-    biggest = jumped_sorted.iloc[0]
-    smallest = jumped_sorted.iloc[-1]
-    avg_jump = jumped_df["_signed_delta"].mean()
+    if len(jumped_sorted) > 0:
+        biggest = jumped_sorted.iloc[0]
+        smallest = jumped_sorted.iloc[-1]
+        avg_jump = jumped_df["_signed_delta"].mean()
+    else:
+        biggest = smallest = pd.Series({"TEAM_NAME": "—", "season": "—", "_signed_delta": 0.0})
+        avg_jump = 0.0
 
     c1, c2, c3 = st.columns(3)
     c1.markdown(
@@ -509,11 +515,17 @@ with tab_playbook:
     jumped_sorted["_after"] = jumped_sorted[next_col] if higher_is_better else (1 - jumped_sorted[next_col])
     jumped_sorted["_team_label"] = jumped_sorted["TEAM_NAME"] + " (" + jumped_sorted["season"] + ")"
 
-    show_n = st.slider(
-        "Show top N teams (by improvement on this stat)",
-        min_value=5, max_value=len(jumped_sorted), value=min(10, len(jumped_sorted)),
-    )
-    slope_df = jumped_sorted.head(show_n)
+    if len(jumped_sorted) == 0:
+        st.info("No teams reached the bracket in this scope.")
+        slope_df = jumped_sorted
+    elif len(jumped_sorted) <= 5:
+        slope_df = jumped_sorted  # too few teams for a "show top N" slider to be useful
+    else:
+        show_n = st.slider(
+            "Show top N teams (by improvement on this stat)",
+            min_value=5, max_value=len(jumped_sorted), value=min(10, len(jumped_sorted)),
+        )
+        slope_df = jumped_sorted.head(show_n)
     slope_order = slope_df.sort_values("_signed_delta", ascending=True)["_team_label"].tolist()
 
     fig_slope = go.Figure()
