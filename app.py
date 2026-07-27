@@ -164,12 +164,19 @@ with st.sidebar:
     st.markdown("---")
 
     st.markdown("**Team & season** (What-If, Team Lookup)")
-    selected_team = st.selectbox("Team", options=team_options)
+    # Defaults to Brooklyn Nets 2025-26 for the presentation -- falls back
+    # to the first alphabetical team/most recent season if either isn't in
+    # the bottom-10 case set (e.g. before this season's data is loaded).
+    DEFAULT_TEAM = "Brooklyn Nets"
+    DEFAULT_SEASON = "2025-26"
+    default_team_index = team_options.index(DEFAULT_TEAM) if DEFAULT_TEAM in team_options else 0
+    selected_team = st.selectbox("Team", options=team_options, index=default_team_index)
 
     season_options = sorted(
         bottom10_full_df[bottom10_full_df["TEAM_NAME"] == selected_team]["season"].unique(), reverse=True
     )
-    selected_season = st.selectbox("Season", options=season_options)
+    default_season_index = season_options.index(DEFAULT_SEASON) if DEFAULT_SEASON in season_options else 0
+    selected_season = st.selectbox("Season", options=season_options, index=default_season_index)
 
     selected_row = bottom10_full_df[
         (bottom10_full_df["TEAM_NAME"] == selected_team) & (bottom10_full_df["season"] == selected_season)
@@ -842,11 +849,22 @@ with tab_whatif:
         height_range = height_max - height_min if pd.notna(height_max - height_min) and (height_max - height_min) > 0 else 1
         case_df["ROSTER_height_norm"] = (case_df["ROSTER_avg_height_in"] - height_min) / height_range
         similarity_pool_df["ROSTER_height_norm"] = (similarity_pool_df["ROSTER_avg_height_in"] - height_min) / height_range
-        selected_row_full = case_df[
-            (case_df["TEAM_NAME"] == selected_row["TEAM_NAME"]) & (case_df["season"] == selected_row["season"])
-        ]
-        selected_height_norm = selected_row_full["ROSTER_height_norm"].iloc[0] if len(selected_row_full) else None
+
+        # Use the sidebar-selected team's OWN ROSTER_avg_height_in (from
+        # bottom10_full_df / team_season_features.csv, already confirmed
+        # correct -- it's what Team Composition displays) instead of
+        # re-looking it up in case_df. The two exports have drifted out of
+        # sync for some team-seasons: case_df's balldontlie join predates a
+        # refresh that made it into team_season_features.csv, so a team can
+        # have real height data in the sidebar but still show up as
+        # "missing" here if only case_df is trusted. Normalization range
+        # (height_min/height_range) still comes from case_df -- that's the
+        # comparison pool, so the scale needs to match it.
         selected_row = selected_row.copy()
+        selected_own_height = selected_row.get("ROSTER_avg_height_in")
+        selected_height_norm = (
+            (float(selected_own_height) - height_min) / height_range if pd.notna(selected_own_height) else None
+        )
         selected_row["ROSTER_height_norm"] = selected_height_norm
 
         extended_features = similarity_features + ROSTER_SIM_COLS + ["ROSTER_height_norm"]
