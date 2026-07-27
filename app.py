@@ -302,63 +302,79 @@ with tab_playbook:
     jump_size_col = "DELTA_NET_RATING_PCTILE"
     jumps_ranked = jumped_df.sort_values(jump_size_col, ascending=False).head(5)
 
-    # Next-season WinPCT isn't in the case table -- look it up directly
-    # from the full team-season table (every team's actual next-season row).
+    # Next-season WinPCT/rank aren't in the case table -- look them up
+    # directly from the full team-season table (every team's actual
+    # next-season row).
     next_winpct_lookup = full_df.set_index(["TEAM_ID", "season_start_year"])["WinPCT"].to_dict()
+    next_rank_lookup = full_df.set_index(["TEAM_ID", "season_start_year"])["LEAGUE_RANK"].to_dict()
 
-    for _, jrow in jumps_ranked.iterrows():
+    for jump_idx, (_, jrow) in enumerate(jumps_ranked.iterrows()):
         jump_style = TEAM_STYLE.get(jrow["TEAM_NAME"], DEFAULT_STYLE)
         next_winpct = next_winpct_lookup.get((jrow["TEAM_ID"], jrow["season_start_year"] + 1))
+        next_rank = next_rank_lookup.get((jrow["TEAM_ID"], jrow["season_start_year"] + 1))
 
-        with st.expander(f"{jrow['TEAM_NAME']} — {jrow['season']}"):
-            head_logo, head_text = st.columns([1, 5])
-            with head_logo:
+        toggle_key = f"jump_card_open_{jump_idx}"
+        if toggle_key not in st.session_state:
+            st.session_state[toggle_key] = False
+
+        with st.container(border=True):
+            logo_col, name_col, wp_col, btn_col = st.columns([1, 3, 2, 1])
+            with logo_col:
                 if jump_style["slug"]:
-                    st.image(f"https://i.logocdn.com/nba/current/{jump_style['slug']}.svg", width=64)
-            with head_text:
+                    st.image(f"https://i.logocdn.com/nba/current/{jump_style['slug']}.svg", width=48)
+            with name_col:
                 st.markdown(
-                    f'<div style="font-family:\'Source Serif 4\',serif; font-size:22px; font-weight:700; '
-                    f'color:{jump_style["primary"]};">{jrow["TEAM_NAME"]}</div>'
+                    f'<div style="font-family:\'Source Serif 4\',serif; font-size:19px; font-weight:700; '
+                    f'color:{jump_style["primary"]}; padding-top:8px;">{jrow["TEAM_NAME"]}</div>'
                     f'<div class="kicker">{jrow["season"]}</div>',
                     unsafe_allow_html=True,
                 )
-
-            wc1, wc2, wc3 = st.columns(3)
-            wc1.markdown(f'<div class="kpi-label">Win % that season</div><div class="kpi-value-fixed" style="font-size:24px;">{jrow["WinPCT"]:.3f}</div>', unsafe_allow_html=True)
-            wc2.markdown('<div class="kpi-label" style="text-align:center; padding-top:14px;">&#8594;</div>', unsafe_allow_html=True)
-            if next_winpct is not None:
-                wc3.markdown(f'<div class="kpi-label">Win % next season</div><div class="kpi-value" style="font-size:24px; color:{COLOR_JUMPED};">{next_winpct:.3f}</div>', unsafe_allow_html=True)
-
-            st.markdown("<div style='margin-top:14px;'></div>", unsafe_allow_html=True)
-            st.markdown('<div class="kpi-label">Roster moves</div>', unsafe_allow_html=True)
-            r1, r2, r3 = st.columns(3)
-            r1.markdown(f'<div class="kpi-value-fixed" style="font-size:20px;">{"Yes" if jrow.get("star_added") else "No"}</div><div style="font-size:12px; color:{TEXT_MUTED};">Star added</div>', unsafe_allow_html=True)
-            r2.markdown(f'<div class="kpi-value-fixed" style="font-size:20px;">{int(jrow.get("NEXT_ROOKIES_on_roster_count", 0))}</div><div style="font-size:12px; color:{TEXT_MUTED};">Rookies added</div>', unsafe_allow_html=True)
-            top_rookie_min = jrow.get("NEXT_ROOKIES_max_minutes_per_game", 0)
-            top_rookie_min_display = f"{top_rookie_min:.0f}" if pd.notna(top_rookie_min) else "0"
-            r3.markdown(f'<div class="kpi-value-fixed" style="font-size:20px;">{top_rookie_min_display}</div><div style="font-size:12px; color:{TEXT_MUTED};">Top rookie min/game</div>', unsafe_allow_html=True)
-
-            stat_deltas = []
-            for stat in delta_summary_df["stat"]:
-                if stat in EXCLUDED_STATS or stat in DUPLICATE_STATS:
-                    continue
-                col = f"DELTA_{stat}_PCTILE"
-                if col not in jrow.index:
-                    continue
-                hib = bool(higher_is_better_lookup.get(stat, True))
-                signed = jrow[col] if hib else -jrow[col]
-                stat_deltas.append((stat, signed))
-            top_stats = sorted(stat_deltas, key=lambda x: x[1], reverse=True)[:3]
-
-            st.markdown("<div style='margin-top:14px;'></div>", unsafe_allow_html=True)
-            st.markdown('<div class="kpi-label">Most improved stats</div>', unsafe_allow_html=True)
-            s1, s2, s3 = st.columns(3)
-            for scol, (stat, signed) in zip([s1, s2, s3], top_stats):
-                scol.markdown(
-                    f'<div class="kpi-value" style="font-size:20px; color:{COLOR_JUMPED};">{signed:+.2f}</div>'
-                    f'<div style="font-size:12px; color:{TEXT_MUTED};">{pretty(stat)}</div>',
+            with wp_col:
+                rank_str = f" ({int(jrow['LEAGUE_RANK'])})" if pd.notna(jrow.get("LEAGUE_RANK")) else ""
+                next_rank_str = f" ({int(next_rank)})" if next_rank is not None and pd.notna(next_rank) else ""
+                next_wp_str = f"{next_winpct:.3f}{next_rank_str}" if next_winpct is not None else "—"
+                st.markdown(
+                    f'<div style="padding-top:10px; font-family:JetBrains Mono, monospace; font-size:14px;">'
+                    f'{jrow["WinPCT"]:.3f}{rank_str} &#8594; '
+                    f'<span style="color:{COLOR_JUMPED}; font-weight:700;">{next_wp_str}</span></div>',
                     unsafe_allow_html=True,
                 )
+            with btn_col:
+                btn_label = "Hide" if st.session_state[toggle_key] else "Details"
+                if st.button(btn_label, key=f"jump_btn_{jump_idx}"):
+                    st.session_state[toggle_key] = not st.session_state[toggle_key]
+
+            if st.session_state[toggle_key]:
+                st.markdown("<div style='margin-top:8px;'></div>", unsafe_allow_html=True)
+                st.markdown('<div class="kpi-label">Roster moves</div>', unsafe_allow_html=True)
+                r1, r2, r3 = st.columns(3)
+                r1.markdown(f'<div class="kpi-value-fixed" style="font-size:20px;">{"Yes" if jrow.get("star_added") else "No"}</div><div style="font-size:12px; color:{TEXT_MUTED};">Star added</div>', unsafe_allow_html=True)
+                r2.markdown(f'<div class="kpi-value-fixed" style="font-size:20px;">{int(jrow.get("NEXT_ROOKIES_on_roster_count", 0))}</div><div style="font-size:12px; color:{TEXT_MUTED};">Rookies added</div>', unsafe_allow_html=True)
+                top_rookie_min = jrow.get("NEXT_ROOKIES_max_minutes_per_game", 0)
+                top_rookie_min_display = f"{top_rookie_min:.0f}" if pd.notna(top_rookie_min) else "0"
+                r3.markdown(f'<div class="kpi-value-fixed" style="font-size:20px;">{top_rookie_min_display}</div><div style="font-size:12px; color:{TEXT_MUTED};">Top rookie min/game</div>', unsafe_allow_html=True)
+
+                stat_deltas = []
+                for stat in delta_summary_df["stat"]:
+                    if stat in EXCLUDED_STATS or stat in DUPLICATE_STATS:
+                        continue
+                    col = f"DELTA_{stat}_PCTILE"
+                    if col not in jrow.index:
+                        continue
+                    hib = bool(higher_is_better_lookup.get(stat, True))
+                    signed = jrow[col] if hib else -jrow[col]
+                    stat_deltas.append((stat, signed))
+                top_stats = sorted(stat_deltas, key=lambda x: x[1], reverse=True)[:3]
+
+                st.markdown("<div style='margin-top:14px;'></div>", unsafe_allow_html=True)
+                st.markdown('<div class="kpi-label">Most improved stats</div>', unsafe_allow_html=True)
+                s1, s2, s3 = st.columns(3)
+                for scol, (stat, signed) in zip([s1, s2, s3], top_stats):
+                    scol.markdown(
+                        f'<div class="kpi-value" style="font-size:20px; color:{COLOR_JUMPED};">{signed:+.2f}</div>'
+                        f'<div style="font-size:12px; color:{TEXT_MUTED};">{pretty(stat)}</div>',
+                        unsafe_allow_html=True,
+                    )
 
     st.markdown("---")
     chart_df = delta_summary_df[
