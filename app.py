@@ -851,22 +851,43 @@ with tab_whatif:
                     break
             if chosen_row is not None:
                 st.markdown("---")
-                st.markdown(f"#### {team_name} vs. {chosen_row['TEAM_NAME']} ({chosen_row['season']}) -- raw stats")
-                raw_rows = []
-                for lf in similarity_features:
-                    raw_col = lf.replace("_PCTILE", "")
-                    if raw_col not in selected_row.index or raw_col not in chosen_row.index:
+                st.markdown(f"#### How {chosen_row['TEAM_NAME']} ({chosen_row['season']}) actually improved")
+                st.caption("Their real year-over-year percentile gain, per stat -- a similar team to you already did this.")
+
+                comp_rows = []
+                for stat in delta_summary_df["stat"]:
+                    if stat in EXCLUDED_STATS or stat in DUPLICATE_STATS:
                         continue
-                    sel_val = float(selected_row[raw_col])
-                    cmp_val = float(chosen_row[raw_col])
-                    raw_rows.append({
-                        "Stat": pretty(raw_col),
-                        team_name: round(sel_val, 3),
-                        chosen_row["TEAM_NAME"]: round(cmp_val, 3),
-                        "Difference": round(cmp_val - sel_val, 3),
-                    })
-                raw_df = pd.DataFrame(raw_rows)
-                st.dataframe(raw_df, use_container_width=True, hide_index=True)
+                    col = f"DELTA_{stat}_PCTILE"
+                    if col not in chosen_row.index:
+                        continue
+                    hib = bool(delta_summary_df.loc[delta_summary_df["stat"] == stat, "higher_is_better"].iloc[0])
+                    signed = chosen_row[col] if hib else -chosen_row[col]
+                    comp_rows.append({"stat": stat, "label": pretty(stat), "improvement": signed})
+                comp_df = pd.DataFrame(comp_rows).sort_values("improvement", ascending=True)
+
+                comp_max_abs = comp_df["improvement"].abs().max() if len(comp_df) else 1
+                fig_comp = go.Figure()
+                fig_comp.add_trace(go.Bar(
+                    y=comp_df["label"], x=comp_df["improvement"], orientation="h",
+                    marker=dict(
+                        color=comp_df["improvement"],
+                        colorscale=[[0, COLOR_STAYED], [0.5, "#f0ede6"], [1, COLOR_JUMPED]],
+                        cmin=-comp_max_abs, cmax=comp_max_abs, line=dict(width=0),
+                    ),
+                    text=[f"{v:+.2f}" for v in comp_df["improvement"]], textposition="outside",
+                    textfont=dict(family="JetBrains Mono, monospace", size=12, color=TEXT),
+                    hovertemplate="<b>%{y}</b><br>%{x:+.2f}<extra></extra>",
+                ))
+                fig_comp.add_vline(x=0, line_color=TEXT_MUTED, line_width=1.5)
+                fig_comp.update_layout(
+                    plot_bgcolor=BG, paper_bgcolor=BG, font_family="Inter", font_color=TEXT,
+                    height=max(320, 28 * len(comp_df)),
+                    xaxis=dict(gridcolor="#e5e5e2", title="Percentile point change (positive = improved)", zeroline=False),
+                    yaxis=dict(showgrid=False, tickfont=dict(size=12)),
+                    margin=dict(l=10, r=50, t=10, b=10), showlegend=False, bargap=0.3,
+                )
+                st.plotly_chart(fig_comp, use_container_width=True)
 
 # ---------------------------------------------------------------------------
 # Tab 4: Case Explorer
