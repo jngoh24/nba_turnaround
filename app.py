@@ -645,33 +645,59 @@ with tab_whatif:
                         "team's upcoming season has typically already happened by the time "
                         "you're using this tool, so these can be informed guesses, not blind ones)")
             next_rookie_inputs = {}
-            next_rookies_max_slider_val = None  # tracks the max_minutes_per_game slider as we go, to bound avg below
-            for col in NEXT_ROOKIE_FEATURES:
-                bounds_row = roster_bounds_df[roster_bounds_df["stat"] == col]
-                if len(bounds_row) == 0:
-                    continue
-                lo, hi = float(bounds_row.iloc[0]["min"]), float(bounds_row.iloc[0]["max"])
-                lo, hi = min(lo, 0.0), max(hi, 0.0)
-                lo, hi = int(round(lo)), int(round(hi))
-                if col == "NEXT_ROOKIES_avg_minutes_per_game" and next_rookies_max_slider_val is not None:
-                    # Average can never exceed the max mathematically -- without
-                    # this, sliders could construct impossible combinations
-                    # (e.g. avg=20 while max=10) the model has never seen and
-                    # produces unreliable, undefined-behavior output for.
-                    hi = min(hi, next_rookies_max_slider_val)
-                    hi = max(hi, lo)  # keep the slider valid if that pushes hi below lo
-                if lo == hi:
-                    hi = lo + 1  # avoid a zero-width slider -- checked LAST, after
-                    # the avg-capping above, since that step can itself collapse
-                    # hi back down to lo (e.g. when max_minutes_per_game is still
-                    # at its default 0) and needs to be caught after, not before.
-                label = col.replace("NEXT_ROOKIES_", "").replace("_", " ").title()
-                next_rookie_inputs[col] = st.slider(label, min_value=lo, max_value=hi, value=0, step=1)
-                if col == "NEXT_ROOKIES_max_minutes_per_game":
-                    next_rookies_max_slider_val = next_rookie_inputs[col]
+
+            count_bounds = roster_bounds_df[roster_bounds_df["stat"] == "NEXT_ROOKIES_on_roster_count"]
+            count_lo, count_hi = 0, 5
+            if len(count_bounds) > 0:
+                count_lo = max(0, int(round(float(count_bounds.iloc[0]["min"]))))
+                count_hi = max(count_lo + 1, int(round(float(count_bounds.iloc[0]["max"]))))
+            rookie_count = st.slider("On Roster Count", min_value=count_lo, max_value=count_hi, value=0, step=1)
+            next_rookie_inputs["NEXT_ROOKIES_on_roster_count"] = rookie_count
+
+            max_bounds = roster_bounds_df[roster_bounds_df["stat"] == "NEXT_ROOKIES_max_minutes_per_game"]
+            avg_bounds = roster_bounds_df[roster_bounds_df["stat"] == "NEXT_ROOKIES_avg_minutes_per_game"]
+
+            if rookie_count == 0:
+                # No rookies -- max/avg minutes are meaningless, don't show
+                # sliders for them at all.
+                next_rookie_inputs["NEXT_ROOKIES_max_minutes_per_game"] = 0
+                next_rookie_inputs["NEXT_ROOKIES_avg_minutes_per_game"] = 0
+                st.caption("No rookies -- minutes sliders not applicable.")
+            elif len(max_bounds) > 0:
+                m_lo, m_hi = float(max_bounds.iloc[0]["min"]), float(max_bounds.iloc[0]["max"])
+                m_lo, m_hi = int(round(min(m_lo, 0.0))), int(round(max(m_hi, 0.0)))
+                if m_lo == m_hi:
+                    m_hi = m_lo + 1
+                max_val = st.slider("Max Minutes Per Game", min_value=m_lo, max_value=m_hi, value=0, step=1)
+                next_rookie_inputs["NEXT_ROOKIES_max_minutes_per_game"] = max_val
+
+                if rookie_count == 1:
+                    # With exactly one rookie, there's nothing to average
+                    # across -- their per-game minutes ARE both the max and
+                    # the average, identically. No separate avg slider.
+                    next_rookie_inputs["NEXT_ROOKIES_avg_minutes_per_game"] = max_val
+                    st.caption(f"1 rookie on roster -- avg minutes/game equals max minutes/game ({max_val}), by definition.")
+                elif len(avg_bounds) > 0:
+                    # 2+ rookies: avg can genuinely differ from max, but can
+                    # never exceed it -- cap the slider's ceiling at max_val.
+                    a_lo, a_hi = float(avg_bounds.iloc[0]["min"]), float(avg_bounds.iloc[0]["max"])
+                    a_lo, a_hi = int(round(min(a_lo, 0.0))), int(round(max(a_hi, 0.0)))
+                    a_hi = min(a_hi, max_val)
+                    a_hi = max(a_hi, a_lo)
+                    if a_lo == a_hi:
+                        a_hi = a_lo + 1
+                    next_rookie_inputs["NEXT_ROOKIES_avg_minutes_per_game"] = st.slider(
+                        "Avg Minutes Per Game", min_value=a_lo, max_value=a_hi, value=0, step=1,
+                    )
 
             st.markdown("**Component stat changes** (year-over-year)")
-            st.caption("For stats where lower is actually better (opponent shooting, turnovers, points allowed), moving the slider left is the improvement direction -- marked below.")
+            st.caption(
+                "Positive always means moving toward being the BEST in the "
+                "league on that stat (percentile 1.0); negative always means "
+                "moving toward WORST (percentile 0) -- true for every slider "
+                "here, regardless of whether the underlying raw stat is "
+                "better lower or higher."
+            )
             delta_inputs = {}
             for col in DELTA_FEATURES:
                 stat_name = col.replace("DELTA_", "").replace("_PCTILE", "")
@@ -680,10 +706,22 @@ with tab_whatif:
                 bounds_row = delta_summary_df[delta_summary_df["stat"] == stat_name]
                 if len(bounds_row) == 0:
                     continue
-                lo, hi = float(bounds_row.iloc[0]["p10"]), float(bounds_row.iloc[0]["p90"])
+                raw_lo, raw_hi = float(bounds_row.iloc[0]["p10"]), float(bounds_row.iloc[0]["p90"])
                 higher_is_better = bool(bounds_row.iloc[0]["higher_is_better"])
-                label = pretty(stat_name) if higher_is_better else f"{pretty(stat_name)} (lower = better)"
-                delta_inputs[col] = st.slider(label, min_value=lo, max_value=hi, value=0.0)
+                if higher_is_better:
+                    # Raw percentile delta already means "higher = better" --
+                    # display as-is.
+                    display_lo, display_hi = raw_lo, raw_hi
+                else:
+                    # Raw percentile delta means "higher = worse" for these
+                    # stats (e.g. OPP_EFG_PCT_PCTILE: ranking high = allowing
+                    # good opponent shooting = bad defense). Flip the display
+                    # so positive/right ALWAYS means improvement here too --
+                    # negate back to the raw value below before it reaches
+                    # the model, which still needs the true, unflipped delta.
+                    display_lo, display_hi = -raw_hi, -raw_lo
+                display_val = st.slider(pretty(stat_name), min_value=display_lo, max_value=display_hi, value=0.0)
+                delta_inputs[col] = display_val if higher_is_better else -display_val
 
         scenario_row = build_input_row(delta_inputs, next_rookie_inputs, star_added_input)
         scenario_prob = model.predict_proba(scenario_row)[0, 1]
