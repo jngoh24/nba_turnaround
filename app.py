@@ -649,7 +649,7 @@ with tab_whatif:
                 bounds_row = roster_bounds_df[roster_bounds_df["stat"] == col]
                 if len(bounds_row) == 0:
                     continue
-                lo, hi = float(bounds_row.iloc[0]["p10"]), float(bounds_row.iloc[0]["p90"])
+                lo, hi = float(bounds_row.iloc[0]["min"]), float(bounds_row.iloc[0]["max"])
                 lo, hi = min(lo, 0.0), max(hi, 0.0)
                 lo, hi = int(round(lo)), int(round(hi))
                 if lo == hi:
