@@ -330,8 +330,16 @@ with tab_playbook:
                     unsafe_allow_html=True,
                 )
             with wp_col:
-                rank_str = f" (#{int(jrow['LEAGUE_RANK'])}/30)" if pd.notna(jrow.get("LEAGUE_RANK")) else ""
-                next_rank_str = f" (#{int(next_rank)}/30)" if next_rank is not None and pd.notna(next_rank) else ""
+                def ordinal(n):
+                    n = int(n)
+                    if 11 <= (n % 100) <= 13:
+                        suffix = "th"
+                    else:
+                        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+                    return f"{n}{suffix}"
+
+                rank_str = f" ({ordinal(jrow['LEAGUE_RANK'])})" if pd.notna(jrow.get("LEAGUE_RANK")) else ""
+                next_rank_str = f" ({ordinal(next_rank)})" if next_rank is not None and pd.notna(next_rank) else ""
                 next_wp_str = f"{next_winpct:.3f}{next_rank_str}" if next_winpct is not None else "—"
                 st.markdown(
                     f'<div style="padding-top:10px; font-family:JetBrains Mono, monospace; font-size:14px;">'
