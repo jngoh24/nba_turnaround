@@ -759,24 +759,18 @@ with tab_whatif:
                 max_val = st.slider("Max Minutes Per Game", min_value=m_lo, max_value=m_hi, value=0, step=1)
                 next_rookie_inputs["NEXT_ROOKIES_max_minutes_per_game"] = max_val
 
+                # Avg Minutes Per Game slider removed -- diagnosed as
+                # producing unreliable, non-monotonic model output at
+                # higher values (a sharp probability cliff around 12-13
+                # min/game, not a smooth realistic decline -- likely the
+                # model overfitting on very few training rows in that
+                # region, given only 90 total cases). Defaulting avg=max
+                # for every rookie count (assume incoming rookies split
+                # time evenly at the max level) instead of exposing it as
+                # a separate control.
+                next_rookie_inputs["NEXT_ROOKIES_avg_minutes_per_game"] = max_val
                 if rookie_count == 1:
-                    # With exactly one rookie, there's nothing to average
-                    # across -- their per-game minutes ARE both the max and
-                    # the average, identically. No separate avg slider.
-                    next_rookie_inputs["NEXT_ROOKIES_avg_minutes_per_game"] = max_val
                     st.caption(f"1 rookie on roster -- avg minutes/game equals max minutes/game ({max_val}), by definition.")
-                elif len(avg_bounds) > 0:
-                    # 2+ rookies: avg can genuinely differ from max, but can
-                    # never exceed it -- cap the slider's ceiling at max_val.
-                    a_lo, a_hi = float(avg_bounds.iloc[0]["min"]), float(avg_bounds.iloc[0]["max"])
-                    a_lo, a_hi = int(round(min(a_lo, 0.0))), int(round(max(a_hi, 0.0)))
-                    a_hi = min(a_hi, max_val)
-                    a_hi = max(a_hi, a_lo)
-                    if a_lo == a_hi:
-                        a_hi = a_lo + 1
-                    next_rookie_inputs["NEXT_ROOKIES_avg_minutes_per_game"] = st.slider(
-                        "Avg Minutes Per Game", min_value=a_lo, max_value=a_hi, value=0, step=1,
-                    )
 
             st.markdown("**Component stat changes** (year-over-year)")
             st.caption("Positive = toward best in the league (1.0). Negative = toward worst (0). True for every slider.")
