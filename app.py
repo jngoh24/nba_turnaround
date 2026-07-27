@@ -794,36 +794,6 @@ with tab_whatif:
             )
 
 # ---------------------------------------------------------------------------
-# Tab 3: What Changed
-# ---------------------------------------------------------------------------
-
-    st.markdown("---")
-    st.subheader(f"Realistic range for {playbook_stat}")
-    st.caption("10th-90th percentile of year-over-year change, all 90 bottom-10 team-seasons.")
-
-    fig2 = go.Figure()
-    fig2.add_trace(go.Scatter(
-        x=[stat_bound_row["p10"], stat_bound_row["p90"]], y=[0, 0], mode="lines",
-        line=dict(color=TEXT_MUTED, width=6), showlegend=False,
-    ))
-    fig2.add_trace(go.Scatter(
-        x=[stat_bound_row["median"]], y=[0], mode="markers",
-        marker=dict(size=16, color=style["primary"]), name="Historical median",
-    ))
-    fig2.update_layout(
-        plot_bgcolor=BG, paper_bgcolor=BG, font_family="Inter", font_color=TEXT, height=140,
-        yaxis=dict(visible=False), margin=dict(l=10, r=10, t=10, b=10),
-        xaxis=dict(title=f"Year-over-year change in {playbook_stat}", gridcolor="#e5e5e2"),
-        showlegend=False,
-    )
-    st.plotly_chart(fig2, use_container_width=True)
-
-    rc1, rc2, rc3 = st.columns(3)
-    rc1.markdown(f'<div class="kpi-label">10th percentile</div><div class="kpi-value-fixed" style="font-size:22px;">{stat_bound_row["p10"]:.3f}</div>', unsafe_allow_html=True)
-    rc2.markdown(f'<div class="kpi-label">Median</div><div class="kpi-value-fixed" style="font-size:22px;">{stat_bound_row["median"]:.3f}</div>', unsafe_allow_html=True)
-    rc3.markdown(f'<div class="kpi-label">90th percentile</div><div class="kpi-value-fixed" style="font-size:22px;">{stat_bound_row["p90"]:.3f}</div>', unsafe_allow_html=True)
-
-# ---------------------------------------------------------------------------
 # Tab 4: Case Explorer
 # ---------------------------------------------------------------------------
 
