@@ -854,12 +854,16 @@ with tab_whatif:
 
             st.markdown('<div class="kpi-label" style="margin-top:16px;">Most similar turnarounds</div>', unsafe_allow_html=True)
             st.caption("Based on current-season stat profile.")
+            if "whatif_selected_similar" not in st.session_state:
+                st.session_state["whatif_selected_similar"] = None
+
             drill_down_choice = None
             if not similar_matches:
                 st.caption("No comparable teams found.")
             else:
-                for dist, srow in similar_matches:
+                for match_idx, (dist, srow) in enumerate(similar_matches):
                     sim_style = TEAM_STYLE.get(srow["TEAM_NAME"], DEFAULT_STYLE)
+                    sim_label = f"{srow['TEAM_NAME']} ({srow['season']})"
                     if sim_style["slug"]:
                         st.image(f"https://i.logocdn.com/nba/current/{sim_style['slug']}.svg", width=32)
                     st.markdown(
@@ -871,12 +875,31 @@ with tab_whatif:
                         f"Star added: {'Yes' if srow.get('star_added') else 'No'} &middot; "
                         f"Rookies: {int(srow.get('NEXT_ROOKIES_on_roster_count', 0))}"
                     )
+
+                    roster_bits = []
+                    if pd.notna(srow.get("ROSTER_pct_min_guard")):
+                        roster_bits.append(
+                            f"{srow['ROSTER_pct_min_guard']:.0%} G / "
+                            f"{srow['ROSTER_pct_min_forward']:.0%} F / "
+                            f"{srow['ROSTER_pct_min_center']:.0%} C"
+                        )
+                    if pd.notna(srow.get("ROSTER_avg_height_in")):
+                        h = float(srow["ROSTER_avg_height_in"])
+                        roster_bits.append(f"Avg height {int(h // 12)}'{round(h % 12)}\"")
+                    if pd.notna(srow.get("ROSTER_avg_age")):
+                        roster_bits.append(f"Avg age {float(srow['ROSTER_avg_age']):.1f}")
+                    if roster_bits:
+                        st.caption(" &middot; ".join(roster_bits))
+
+                    is_selected = st.session_state["whatif_selected_similar"] == sim_label
+                    btn_label = "Hide comparison" if is_selected else "View comparison"
+                    if st.button(btn_label, key=f"whatif_sim_btn_{match_idx}", use_container_width=True):
+                        st.session_state["whatif_selected_similar"] = None if is_selected else sim_label
                     st.markdown("---")
 
-                sim_labels = [f"{srow['TEAM_NAME']} ({srow['season']})" for _, srow in similar_matches]
-                drill_down_choice = st.radio("View raw stats vs.", options=["None"] + sim_labels, label_visibility="collapsed")
+                drill_down_choice = st.session_state["whatif_selected_similar"]
 
-        if drill_down_choice and drill_down_choice != "None":
+        if drill_down_choice:
             chosen_row = None
             for dist, srow in similar_matches:
                 if f"{srow['TEAM_NAME']} ({srow['season']})" == drill_down_choice:
