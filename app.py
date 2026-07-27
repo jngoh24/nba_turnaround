@@ -403,6 +403,8 @@ with tab_playbook:
                     )
 
     st.markdown("---")
+    st.subheader("Which stats separated teams that turned around")
+    st.caption("Average improvement for teams that reached the bracket vs. teams that didn't.")
     if playbook_season_filter == "All Seasons":
         chart_df = delta_summary_df[
             ~delta_summary_df["stat"].isin(EXCLUDED_STATS | DUPLICATE_STATS)
