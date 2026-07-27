@@ -653,8 +653,6 @@ with tab_whatif:
                 lo, hi = float(bounds_row.iloc[0]["min"]), float(bounds_row.iloc[0]["max"])
                 lo, hi = min(lo, 0.0), max(hi, 0.0)
                 lo, hi = int(round(lo)), int(round(hi))
-                if lo == hi:
-                    hi = lo + 1  # avoid a zero-width slider if rounding collapses the range
                 if col == "NEXT_ROOKIES_avg_minutes_per_game" and next_rookies_max_slider_val is not None:
                     # Average can never exceed the max mathematically -- without
                     # this, sliders could construct impossible combinations
@@ -662,6 +660,11 @@ with tab_whatif:
                     # produces unreliable, undefined-behavior output for.
                     hi = min(hi, next_rookies_max_slider_val)
                     hi = max(hi, lo)  # keep the slider valid if that pushes hi below lo
+                if lo == hi:
+                    hi = lo + 1  # avoid a zero-width slider -- checked LAST, after
+                    # the avg-capping above, since that step can itself collapse
+                    # hi back down to lo (e.g. when max_minutes_per_game is still
+                    # at its default 0) and needs to be caught after, not before.
                 label = col.replace("NEXT_ROOKIES_", "").replace("_", " ").title()
                 next_rookie_inputs[col] = st.slider(label, min_value=lo, max_value=hi, value=0, step=1)
                 if col == "NEXT_ROOKIES_max_minutes_per_game":
