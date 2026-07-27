@@ -794,6 +794,35 @@ with tab_whatif:
         similarity_pool_df = case_df[case_df["NEXT_target_b_made_bracket"] == True].copy()
         similarity_features = [c for c in LEVEL_FEATURES if c.replace("_PCTILE", "") not in DUPLICATE_STATS]
 
+        # Position mix + height -- already-populated ROSTER_* composition
+        # columns. pct_min_guard/forward/center are already 0-1 shares,
+        # directly comparable to the percentile stats. Height is raw
+        # inches, min-max normalized across all 90 cases so it doesn't
+        # dominate the distance purely from being on a different scale.
+        ROSTER_SIM_COLS = ["ROSTER_pct_min_guard", "ROSTER_pct_min_forward", "ROSTER_pct_min_center"]
+        height_min = case_df["ROSTER_avg_height_in"].min()
+        height_max = case_df["ROSTER_avg_height_in"].max()
+        height_range = height_max - height_min if pd.notna(height_max - height_min) and (height_max - height_min) > 0 else 1
+        case_df["ROSTER_height_norm"] = (case_df["ROSTER_avg_height_in"] - height_min) / height_range
+        similarity_pool_df["ROSTER_height_norm"] = (similarity_pool_df["ROSTER_avg_height_in"] - height_min) / height_range
+        selected_row_full = case_df[
+            (case_df["TEAM_NAME"] == selected_row["TEAM_NAME"]) & (case_df["season"] == selected_row["season"])
+        ]
+        selected_height_norm = selected_row_full["ROSTER_height_norm"].iloc[0] if len(selected_row_full) else None
+
+        extended_features = similarity_features + ROSTER_SIM_COLS + ["ROSTER_height_norm"]
+        target_has_roster_data = all(pd.notna(selected_row.get(c)) for c in ROSTER_SIM_COLS) and pd.notna(selected_height_norm)
+
+        if target_has_roster_data:
+            pool_with_roster = similarity_pool_df.dropna(subset=ROSTER_SIM_COLS + ["ROSTER_height_norm"])
+            active_features = extended_features
+            active_pool = pool_with_roster if len(pool_with_roster) > 0 else similarity_pool_df
+            if len(pool_with_roster) == 0:
+                active_features = similarity_features
+        else:
+            active_features = similarity_features
+            active_pool = similarity_pool_df
+
         def compute_similar_teams(target_row, pool_df, features, n=3):
             target_vec = target_row[features].astype(float)
             matches = []
@@ -806,7 +835,9 @@ with tab_whatif:
             matches.sort(key=lambda x: x[0])
             return matches[:n]
 
-        similar_matches = compute_similar_teams(selected_row, similarity_pool_df, similarity_features, n=3)
+        similar_matches = compute_similar_teams(selected_row, active_pool, active_features, n=3)
+        if not target_has_roster_data:
+            st.caption("Position/height data unavailable for this team -- matched on stats only.")
 
         with col_result:
             st.markdown(
