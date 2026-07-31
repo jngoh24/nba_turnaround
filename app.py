@@ -788,8 +788,43 @@ with tab_whatif:
                 display_val = st.slider(pretty(stat_name), min_value=display_lo, max_value=display_hi, value=0.0)
                 delta_inputs[col] = display_val if higher_is_better else -display_val
 
-        scenario_row = build_input_row(delta_inputs, next_rookie_inputs, star_added_input)
+        def rookie_adjustment_pct(count, minutes):
+            if count == 0:
+                return 0.0
+            if count == 1:
+                if minutes <= 10:
+                    return 0.02
+                elif minutes <= 20:
+                    return 0.05
+                else:
+                    return 0.07
+            if count == 2:
+                if minutes <= 10:
+                    return 0.04
+                elif minutes <= 20:
+                    return 0.07
+                else:
+                    return 0.09
+            # 3+ rookies
+            if minutes <= 10:
+                return 0.02
+            elif minutes <= 20:
+                return -0.04
+            else:
+                return -0.12
+
+        rookie_adj = rookie_adjustment_pct(
+            next_rookie_inputs.get("NEXT_ROOKIES_on_roster_count", 0),
+            next_rookie_inputs.get("NEXT_ROOKIES_max_minutes_per_game", 0),
+        )
+        # Model always sees zeroed rookie inputs -- rookie effect on the
+        # displayed probability comes entirely from the hard-coded table
+        # above, not from the model's own (unreliable, small-sample)
+        # learned behavior for this feature.
+        next_rookies_for_model = {c: 0.0 for c in NEXT_ROOKIE_FEATURES}
+        scenario_row = build_input_row(delta_inputs, next_rookies_for_model, star_added_input)
         scenario_prob = model.predict_proba(scenario_row)[0, 1]
+        scenario_prob = min(max(scenario_prob + rookie_adj, 0.0), 1.0)
 
         similarity_pool_df = case_df[case_df["NEXT_target_b_made_bracket"] == True].copy()
         similarity_features = [c for c in LEVEL_FEATURES if c.replace("_PCTILE", "") not in DUPLICATE_STATS]
