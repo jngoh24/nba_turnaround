@@ -735,10 +735,10 @@ with tab_whatif:
             next_rookie_inputs = {}
 
             count_bounds = roster_bounds_df[roster_bounds_df["stat"] == "NEXT_ROOKIES_on_roster_count"]
-            count_lo, count_hi = 0, 5
+            count_lo, count_hi = 0, 4
             if len(count_bounds) > 0:
                 count_lo = max(0, int(round(float(count_bounds.iloc[0]["min"]))))
-                count_hi = max(count_lo + 1, int(round(float(count_bounds.iloc[0]["max"]))))
+                count_hi = min(4, max(count_lo + 1, int(round(float(count_bounds.iloc[0]["max"])))))
             rookie_count = st.slider("On Roster Count", min_value=count_lo, max_value=count_hi, value=0, step=1)
             next_rookie_inputs["NEXT_ROOKIES_on_roster_count"] = rookie_count
 
