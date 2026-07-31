@@ -164,12 +164,16 @@ with st.sidebar:
     st.markdown("---")
 
     st.markdown("**Team & season** (What-If, Team Lookup)")
-    selected_team = st.selectbox("Team", options=team_options)
+    DEFAULT_TEAM = "Brooklyn Nets"
+    default_team_idx = team_options.index(DEFAULT_TEAM) if DEFAULT_TEAM in team_options else 0
+    selected_team = st.selectbox("Team", options=team_options, index=default_team_idx)
 
     season_options = sorted(
         bottom10_full_df[bottom10_full_df["TEAM_NAME"] == selected_team]["season"].unique(), reverse=True
     )
-    selected_season = st.selectbox("Season", options=season_options)
+    DEFAULT_SEASON = "2025-26"
+    default_season_idx = season_options.index(DEFAULT_SEASON) if DEFAULT_SEASON in season_options else 0
+    selected_season = st.selectbox("Season", options=season_options, index=default_season_idx)
 
     selected_row = bottom10_full_df[
         (bottom10_full_df["TEAM_NAME"] == selected_team) & (bottom10_full_df["season"] == selected_season)
